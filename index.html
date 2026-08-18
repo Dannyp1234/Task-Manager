@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Task Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0e1016; --surface:#161923; --surface2:#1e2230; --surface3:#262b3d; --border:#2b3040;
+    --text:#eceef4; --text-dim:#9096ab; --text-faint:#5c6278;
+
+    --title:#22223A;
+    --today:#3AA6D9;      --today-bg:rgba(58,166,217,0.14);
+    --capture:#D9A400;    --capture-bg:rgba(217,164,0,0.14);
+    --quickwin:#4CAF50;   --quickwin-bg:rgba(76,175,80,0.14);
+    --urgent:#E8734A;     --urgent-bg:rgba(232,115,74,0.14);
+    --tasks:#5B6FE0;      --tasks-bg:rgba(91,111,224,0.14);
+    --parked:#F0A93E;     --parked-bg:rgba(240,169,62,0.14);
+    --recurring:#2FB6A8;  --recurring-bg:rgba(47,182,168,0.14);
+    --projects:#8E5BD9;   --projects-bg:rgba(142,91,217,0.14);
+    --wins:#3FAE5A;       --wins-bg:rgba(63,174,90,0.14);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--bg); color:var(--text); font-family:'Inter',system-ui,sans-serif; -webkit-font-smoothing:antialiased;}
+  h1,h2,h3,.display{font-family:'Space Grotesk',sans-serif;}
+  ::-webkit-scrollbar{width:8px;height:8px;} ::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:4px;}
+  button{cursor:pointer;border:none;background:none;color:inherit;font-family:inherit;}
+  #app{max-width:1300px;margin:0 auto;padding:20px 20px 80px;}
+
+  .topbar{
+    background:var(--title); border-radius:16px; padding:16px 20px; margin-bottom:16px;
+    display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;
+  }
+  .brand{display:flex;align-items:center;gap:10px;}
+  .brand h1{font-size:21px;margin:0;font-weight:700;color:#fff;letter-spacing:-0.01em;}
+  .brand .sub{font-size:12px;color:rgba(255,255,255,0.55); margin-top:-1px;}
+  .topbar-actions{display:flex; gap:8px;}
+  .btn-add{background:#fff; color:var(--title); padding:10px 18px; border-radius:10px; font-weight:700; font-size:13.5px;}
+  .btn-add:hover{opacity:.9;}
+  .btn-refresh{background:rgba(255,255,255,0.12); color:#fff; padding:10px 14px; border-radius:10px; font-weight:600; font-size:13px;}
+  .btn-refresh:hover{background:rgba(255,255,255,0.2);}
+  .btn-home{background:var(--surface2); color:var(--text); border:1px solid var(--border); padding:9px 15px; border-radius:10px; font-weight:600; font-size:13px;}
+  .btn-home:hover{background:var(--surface3);}
+
+  .ws-toggle{display:flex; background:rgba(255,255,255,0.08); border-radius:11px; padding:3px; gap:2px;}
+  .ws-btn{padding:8px 16px; border-radius:8px; font-weight:700; font-size:13px; color:rgba(255,255,255,0.55);}
+  .ws-btn.active{background:#fff; color:var(--title);}
+  .ws-btn:hover:not(.active){color:#fff;}
+
+  .pillrow{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px;}
+  .pill{display:flex; align-items:baseline; gap:7px; background:var(--surface); border:1px solid var(--border); padding:8px 14px; border-radius:100px; font-size:12.5px; font-weight:600; color:var(--text-dim); transition:transform .1s ease;}
+  .pill:hover{transform:translateY(-1px);}
+  .pill b{font-family:'JetBrains Mono',monospace; font-size:14px; color:var(--text);}
+  .pill.c-today{border-color:rgba(58,166,217,0.45);} .pill.c-today b{color:var(--today);}
+  .pill.c-capture{border-color:rgba(217,164,0,0.45);} .pill.c-capture b{color:var(--capture);}
+  .pill.c-quickwin{border-color:rgba(76,175,80,0.45);} .pill.c-quickwin b{color:var(--quickwin);}
+  .pill.c-urgent{border-color:rgba(232,115,74,0.45);} .pill.c-urgent b{color:var(--urgent);}
+  .pill.c-parked{border-color:rgba(240,169,62,0.45);} .pill.c-parked b{color:var(--parked);}
+  .pill.c-tasks{border-color:rgba(91,111,224,0.45);} .pill.c-tasks b{color:var(--tasks);}
+  .pill.c-projects{border-color:rgba(142,91,217,0.45);} .pill.c-projects b{color:var(--projects);}
+  .pill.c-recurring{border-color:rgba(47,182,168,0.45);} .pill.c-recurring b{color:var(--recurring);}
+  .pill.c-wins{border-color:rgba(63,174,90,0.45);} .pill.c-wins b{color:var(--wins);}
+
+  /* two-column landing, exact stacking order */
+  .landing-grid{display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start;}
+  @media(max-width:880px){.landing-grid{grid-template-columns:1fr;}}
+  .col{display:flex; flex-direction:column; gap:16px;}
+
+  .section{background:var(--surface); border:1px solid var(--border); border-radius:14px; overflow:hidden;}
+  .section-head{padding:12px 16px; display:flex; align-items:center; justify-content:space-between; color:#fff; font-weight:700; font-size:13px; text-transform:uppercase; letter-spacing:.04em;}
+  .section-head .hint{font-weight:500; text-transform:none; font-size:11px; opacity:.85; letter-spacing:0;}
+  .section-body{padding:10px 12px 12px;}
+  .section-count{font-family:'JetBrains Mono',monospace; font-weight:700; font-size:12.5px; opacity:.9;}
+  .showall{font-size:11.5px; font-weight:700; color:#fff; background:rgba(255,255,255,0.18); padding:5px 10px; border-radius:7px;}
+  .showall:hover{background:rgba(255,255,255,0.3);}
+
+  .empty{color:var(--text-faint); font-size:13px; padding:12px 6px; font-style:italic;}
+
+  .row{border-radius:10px; margin-bottom:3px;}
+  .row-main{display:flex; align-items:flex-start; gap:8px; padding:9px 6px; border-radius:10px;}
+  .row-main:hover{background:var(--surface2);}
+  .expand-btn{width:20px;height:20px;border-radius:6px;background:var(--surface3); color:var(--text-faint); font-size:12px; font-weight:900; flex-shrink:0; margin-top:2px; display:flex;align-items:center;justify-content:center;}
+  .expand-btn:hover{color:var(--text);}
+  .expand-spacer{width:20px; flex-shrink:0;}
+  .row-check{width:19px;height:19px;border-radius:6px;border:2px solid var(--text-faint); flex-shrink:0; margin-top:2px; display:flex;align-items:center;justify-content:center;}
+  .row-check.checked{background:var(--wins); border-color:var(--wins);}
+  .row-check.checked:after{content:"✓"; color:#0e1016; font-size:12px; font-weight:900;}
+  .item-reorder{display:flex; flex-direction:column; gap:2px; flex-shrink:0;}
+  .row-body{flex:1; min-width:0; cursor:pointer;}
+  .row-title{font-size:13.5px; font-weight:600; color:var(--text); line-height:1.3;}
+  .row-title .step-of{color:var(--text-faint); font-weight:500;}
+  .row-meta{display:flex; gap:6px; align-items:center; margin-top:4px; flex-wrap:wrap;}
+  .tag{font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:100px;}
+  .tag.due{background:var(--parked-bg); color:var(--parked);}
+  .tag.overdue{background:var(--urgent-bg); color:var(--urgent);}
+  .tag.review{background:var(--projects-bg); color:var(--projects);}
+  .tag.urgent{background:var(--urgent-bg); color:var(--urgent);}
+  .tag.prio-high{background:var(--urgent-bg); color:var(--urgent);}
+  .tag.prio-medium{background:var(--capture-bg); color:var(--capture);}
+  .tag.prio-low{background:var(--surface3); color:var(--text-faint);}
+  .progress-mini{display:flex; align-items:center; gap:6px; margin-top:4px;}
+  .progress-track{flex:1; height:5px; background:var(--surface3); border-radius:3px; overflow:hidden; max-width:130px;}
+  .progress-fill{height:100%; border-radius:3px;}
+  .progress-label{font-size:10.5px; color:var(--text-faint); font-family:'JetBrains Mono',monospace;}
+
+  /* nested steps, inline like Notion sub-items */
+  .steps-nested{margin-left:26px; margin-top:2px; margin-bottom:6px; border-left:2px solid var(--surface3); padding-left:10px;}
+  .step-nested-row{display:flex; align-items:center; gap:8px; padding:5px 4px;}
+  .step-nested-text{flex:1; font-size:12.5px; color:var(--text-dim);}
+  .step-nested-text.done{text-decoration:line-through; color:var(--text-faint);}
+  .mini-flag{font-size:9.5px; font-weight:700; padding:3px 7px; border-radius:6px; background:var(--surface3); color:var(--text-faint);}
+  .mini-flag.today.active{background:var(--today-bg); color:var(--today);}
+  .mini-flag.quickwin.active{background:var(--quickwin-bg); color:var(--quickwin);}
+  .step-add-inline{display:flex; gap:6px; margin-top:4px; padding-left:4px;}
+  .step-add-inline input{flex:1; background:var(--surface2); border:1px solid var(--border); border-radius:7px; padding:6px 9px; color:var(--text); font-size:12px; outline:none;}
+  .step-add-inline button{background:var(--surface3); color:var(--text-dim); padding:6px 10px; border-radius:7px; font-size:11.5px; font-weight:700;}
+
+  /* quick capture */
+  .qc-input-row{display:flex; gap:8px; margin-bottom:10px;}
+  .qc-input{flex:1; background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:10px 13px; color:var(--text); font-size:13.5px; outline:none;}
+  .qc-input:focus{border-color:var(--capture);}
+  .qc-urgent-toggle{width:42px; border-radius:10px; border:1px solid var(--border); background:var(--surface2); color:var(--text-faint); font-size:15px; flex-shrink:0;}
+  .qc-urgent-toggle.active{background:var(--urgent-bg); border-color:var(--urgent); color:var(--urgent);}
+  .qc-send{background:var(--capture); color:#0e1016; font-weight:700; padding:0 16px; border-radius:10px; font-size:13px;}
+  .qc-item{display:flex; align-items:center; gap:9px; padding:8px 8px; border-radius:8px;}
+  .qc-item:hover{background:var(--surface2);}
+  .qc-item .qc-text{flex:1; font-size:13px;}
+  .qc-item.urgent .qc-text{color:var(--urgent); font-weight:600;}
+  .qc-actions{display:flex; gap:5px;}
+  .qc-btn{font-size:10.5px; font-weight:700; padding:5px 8px; border-radius:6px; background:var(--surface3); color:var(--text-dim);}
+  .qc-btn.convert{background:var(--capture-bg); color:var(--capture);}
+
+  .win-row{display:flex; gap:9px; padding:7px 6px; font-size:12.5px;}
+  .win-row .dot{color:var(--wins); flex-shrink:0;}
+  .win-parent{color:var(--text-faint); font-size:10.5px;}
+
+  .overlay-backdrop{position:fixed; inset:0; background:rgba(6,7,11,0.72); backdrop-filter:blur(2px); display:flex; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; z-index:50;}
+  .overlay-card{background:var(--surface); border:1px solid var(--border); border-radius:18px; max-width:640px; width:100%; padding:24px 24px 28px; margin-top:10px;}
+  .overlay-top{display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;}
+  .overlay-title{font-size:19px; font-weight:700;}
+  .overlay-close{width:32px;height:32px;border-radius:9px;background:var(--surface2); display:flex;align-items:center;justify-content:center; font-size:15px; color:var(--text-dim);}
+  .overlay-close:hover{background:var(--surface3); color:var(--text);}
+
+  label.field-label{display:block; font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--text-faint); margin:14px 0 6px;}
+  input[type=text],input[type=date],input[type=email],input[type=password],textarea,select{width:100%; background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:10px 13px; color:var(--text); font-size:13.5px; outline:none; font-family:inherit;}
+  input:focus,textarea:focus,select:focus{border-color:var(--today);}
+  textarea{resize:vertical; min-height:56px;}
+  .type-choice{display:flex; gap:8px;}
+  .type-btn{flex:1; padding:13px 10px; border-radius:12px; border:1px solid var(--border); background:var(--surface2); text-align:center; font-weight:700; font-size:12.5px; color:var(--text-dim);}
+  .type-btn.active.task{border-color:var(--tasks); background:var(--tasks-bg); color:var(--tasks);}
+  .type-btn.active.project{border-color:var(--projects); background:var(--projects-bg); color:var(--projects);}
+  .type-btn.active.recurring{border-color:var(--recurring); background:var(--recurring-bg); color:var(--recurring);}
+  .type-btn.active.ws{border-color:var(--text-dim); background:var(--surface3); color:var(--text);}
+  .row2{display:flex; gap:12px;} .row2 > div{flex:1;}
+  .row3{display:flex; gap:12px;} .row3 > div{flex:1;}
+  .checkline{display:flex; align-items:center; gap:9px; margin-top:13px; font-size:13px; color:var(--text-dim); font-weight:600;}
+  .checkline input{width:auto;}
+  .step-list{margin-top:6px;}
+  .step-row{display:flex; align-items:center; gap:9px; padding:7px 4px; border-bottom:1px solid var(--surface2);}
+  .step-row:last-child{border-bottom:none;}
+  .step-text{flex:1; font-size:13px;}
+  .step-text.done{text-decoration:line-through; color:var(--text-faint);}
+  .step-flags{display:flex; gap:5px;}
+  .flag-btn{font-size:10px; font-weight:700; padding:5px 8px; border-radius:7px; background:var(--surface3); color:var(--text-faint);}
+  .flag-btn.today.active{background:var(--today-bg); color:var(--today);}
+  .flag-btn.quickwin.active{background:var(--quickwin-bg); color:var(--quickwin);}
+  .step-add-row{display:flex; gap:8px; margin-top:9px;}
+  .save-bar{display:flex; gap:10px; margin-top:20px;}
+  .btn-primary{flex:1; background:var(--text); color:var(--bg); font-weight:700; padding:12px; border-radius:11px; font-size:13.5px;}
+  .btn-secondary{background:var(--surface2); color:var(--text-dim); font-weight:700; padding:12px 18px; border-radius:11px; font-size:13.5px; border:1px solid var(--border);}
+  .btn-danger{color:var(--urgent);}
+  .detail-meta-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;}
+  .detail-actions{display:flex; gap:8px; flex-wrap:wrap; margin-top:16px;}
+  .detail-btn{font-size:12px; font-weight:700; padding:9px 13px; border-radius:9px; background:var(--surface2); border:1px solid var(--border); color:var(--text-dim);}
+  .detail-btn:hover{color:var(--text);}
+  .detail-btn.primary{background:var(--today-bg); color:var(--today); border-color:transparent;}
+  .detail-btn.done{background:var(--wins-bg); color:var(--wins); border-color:transparent;}
+  .park-box{background:var(--parked-bg); border:1px solid rgba(240,169,62,0.35); border-radius:12px; padding:11px 13px; margin-top:12px; font-size:12.5px;}
+  .park-box b{color:var(--parked);}
+
+  .toast{position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--surface3); border:1px solid var(--border); padding:10px 18px; border-radius:10px; font-size:13px; font-weight:600; z-index:100; opacity:0; pointer-events:none; transition:opacity .2s ease;}
+  .toast.show{opacity:1;}
+  .footer-note{text-align:center; color:var(--text-faint); font-size:11px; margin-top:24px;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="toast" id="toast"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<script>
+const STORAGE_KEY = 'task-tracker-v1';
+const NOTION_IMPORT_JSON = "[{\"type\": \"task\", \"name\": \"Why Does James Wells need a van draft\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Feedback Report Reader\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Diary Planning Q3\", \"notes\": \"\", \"priority\": \"Low\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"AEi&T Assessments BEFORE END OF August\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Notta Subscription 2/4/26\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Change email address on call sheet\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Screen refresh issues & VPN\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Weekly Update for KF Mobile on Tracker?\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Book Hotel Sheffield & Plan Journey\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Adderstone Durham\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [{\"text\": \"Clarify what action is needed\", \"done\": false, \"today\": false, \"quickwin\": false}, {\"text\": \"Make contact / progress\", \"done\": false, \"today\": false, \"quickwin\": false}], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Shed plans\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Notes typed up\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Derby, time with Chris to add courses 30/3/26\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Hotel for course in Derby\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Fiesta\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Plan 1-1\\u2019s with the team.\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"James \\u2014 meeting, e-learning, missing items, staff qualifications\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [{\"text\": \"Draft a short message to James\", \"done\": false, \"today\": false, \"quickwin\": false}, {\"text\": \"List the specific items to chase\", \"done\": false, \"today\": false, \"quickwin\": false}, {\"text\": \"Send it\", \"done\": false, \"today\": false, \"quickwin\": false}], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"ADHD Collect prescription\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Book some Holiday\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"What do I need to do for blood tests\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Tyre Tech Fitting on Van? Waiting for dates.\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Get LMTT Finished \\u2014 Live\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": true, \"parkReason\": \"awaiting conversation with Alan before this can progress.\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"NTDA Roadside working & Site\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Update Task Manager\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"LMTT Claim\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"LMTT Certificates\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Emailed Alan about James\\u2019s Van 13/07/26\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"KF Mobile Balancer and stock check updates in folder?\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"LMTT Claim Coupa Sent 30/3/26\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Sign in and view cornerstone\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Fettle Meeting Plans, Must Mention Sandals & Consolidate Fettle Tasks\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Managing Employee Relations Course\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Dan Ramm\\u2019s Laptop\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"GP ADHD Referral\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Pack and plan expo\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"NTDA LMTT red light\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Plan for Fettle meeting \\u2014 what needs to happen and be covered?\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [{\"text\": \"List agenda items\", \"done\": false, \"today\": false, \"quickwin\": false}, {\"text\": \"Note any prep needed\", \"done\": false, \"today\": false, \"quickwin\": false}, {\"text\": \"Confirm attendees\", \"done\": false, \"today\": false, \"quickwin\": false}], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Bridgestone training aids follow-up \\u2014 \\u23f8 OLD (meeting was 28/02/25)\", \"notes\": \"Very old item. Contacts: philip.berry@bridgestone.eu and Mark.WILSON@bridgestone.eu. Decide: still relevant or archive it?\", \"priority\": \"Low\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"When is conference\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Finish Fettle checklists\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": true, \"parkReason\": \"waiting on James to complete his section. Also need to discuss M-Check with him before progressing.\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Hotel Derby Next Week? Check with Megan\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Support Plan\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Call Pinehill\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Ask Dean about uniform being removed from derby\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"David Simpson LMTT?\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"James Fettle learning report\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Guide for adding and marking delegates for KFMT31 & T214\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Feedback\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Catchup on emails\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Role reinforcement\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Update tech support details on contact sheet for mobile\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Polestar Service 30/07/26\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Mobile Training \\u2014 get system access and learn how to use\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [{\"text\": \"Request system access\", \"done\": false, \"today\": false, \"quickwin\": false}, {\"text\": \"Set up login\", \"done\": false, \"today\": false, \"quickwin\": false}, {\"text\": \"Explore and learn the system\", \"done\": false, \"today\": false, \"quickwin\": false}], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Email Alan ADHD and 1-1 Needed\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"LMTT Claim\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Haynes Logins\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Drop TV remote to letchworth\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Plan questions for Dean\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Fettle ICT Lists & M-Checks Removed from ICT checklists\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Start booking Dan on courses \\u2014 T139 EV, T190 ADAS, T53 Alignment\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [{\"text\": \"Check Dan's availability\", \"done\": false, \"today\": false, \"quickwin\": false}, {\"text\": \"Find course dates for T139, T190, T53\", \"done\": false, \"today\": false, \"quickwin\": false}, {\"text\": \"Book all three\", \"done\": false, \"today\": false, \"quickwin\": false}], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Dan \\u2014 grade 2 paperwork (Dan can also do kfmt31Doc)\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [{\"text\": \"Gather grade 2 paperwork\", \"done\": false, \"today\": false, \"quickwin\": false}, {\"text\": \"Complete kfmt31Doc\", \"done\": false, \"today\": false, \"quickwin\": false}, {\"text\": \"File / submit\", \"done\": false, \"today\": false, \"quickwin\": false}], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Locking wheel nuts for vans\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"FT043 Report for Andy just waiting for confirmation it has all worked correctly Monday 1/6/26\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Go through ADHD at Work and draft a plan\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [{\"text\": \"Read/review ADHD at Work material\", \"done\": false, \"today\": false, \"quickwin\": false}, {\"text\": \"Note key actions\", \"done\": false, \"today\": false, \"quickwin\": false}, {\"text\": \"Draft structured plan\", \"done\": false, \"today\": false, \"quickwin\": false}], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Danny Ramm Van booked in\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Need To Get Done\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Message Baz\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Add Dan to Courses\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Make 1-1 action list easy to follow and part of continual process\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [{\"text\": \"Review current 1-1 format\", \"done\": false, \"today\": false, \"quickwin\": false}, {\"text\": \"Simplify into clear actions\", \"done\": false, \"today\": false, \"quickwin\": false}, {\"text\": \"Build into recurring process\", \"done\": false, \"today\": false, \"quickwin\": false}], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"James automotive course\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Book Plaza Sheffield for next week\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Fettle Plan for James updated and in folder\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Correct Calendar\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Start Fettle ICT Rollout\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"ADHD Certify corrections\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Get Team to complete SAGE Details\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"LMTT Claim\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"NTDA Forms Emailed 01/06/26 & Enquired about LRTT\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"arrange meeting with trainers\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Update Mobile courses and trainer notes\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [{\"text\": \"List all courses needing updates\", \"done\": false, \"today\": false, \"quickwin\": false}, {\"text\": \"Update content for each\", \"done\": false, \"today\": false, \"quickwin\": false}, {\"text\": \"Update trainer notes to match\", \"done\": false, \"today\": false, \"quickwin\": false}], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Put Restriction back on KFMT33 When David Simpson has completed.\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"LMTT Claim\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Observation write ups\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Build LMTT Report\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [{\"text\": \"Gather data needed\", \"done\": false, \"today\": false, \"quickwin\": false}, {\"text\": \"Structure report\", \"done\": false, \"today\": false, \"quickwin\": false}, {\"text\": \"Build out content\", \"done\": false, \"today\": false, \"quickwin\": false}, {\"text\": \"Review and finalise\", \"done\": false, \"today\": false, \"quickwin\": false}], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Re-Organise RMST SharePoint\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"LMTT Claim\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Plan Meeting with Rob\", \"notes\": \"\", \"priority\": \"High\", \"urgent\": true, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [], \"today\": false, \"quickwin\": false, \"completed\": true, \"completedDate\": null, \"source\": \"notion\"}, {\"type\": \"task\", \"name\": \"Handout Folder \\u2014 VCC, VHC, Auto4, Mobile Matters ALL DIGITAL\", \"notes\": \"\", \"priority\": \"Medium\", \"urgent\": false, \"dueDate\": \"\", \"reviewDate\": \"\", \"parked\": false, \"parkReason\": \"\", \"parkReviewDate\": \"\", \"recurrence\": null, \"steps\": [{\"text\": \"List all handouts needing digitalising\", \"done\": false, \"today\": false, \"quickwin\": false}, {\"text\": \"Convert/create digital versions\", \"done\": false, \"today\": false, \"quickwin\": false}, {\"text\": \"Organise into folder structure\", \"done\": false, \"today\": false, \"quickwin\": false}], \"today\": false, \"quickwin\": false, \"completed\": false, \"completedDate\": null, \"source\": \"notion\"}]";
+const STEPS_PATCH_JSON = "{\"Feedback Report Reader\": [{\"text\": \"Plan how to get feedback reader running\", \"done\": false}, {\"text\": \"Build the tool to separate what I need from the other information\", \"done\": false}, {\"text\": \"Test\", \"done\": false}, {\"text\": \"Set up to make it repeatable\", \"done\": false}], \"Diary Planning Q3\": [{\"text\": \"Check Holidays and if anyone is going to be off\", \"done\": false}, {\"text\": \"Reading emailed for availability, awaiting confirmation\", \"done\": false}, {\"text\": \"Check recruitment numbers with Dean\", \"done\": false}, {\"text\": \"Look at room bookings\", \"done\": false}, {\"text\": \"Arrange diary\", \"done\": false}, {\"text\": \"Course import on SABA\", \"done\": false}, {\"text\": \"Dan LMTT signoff structure\", \"done\": false}, {\"text\": \"Update mobile booking sheet\", \"done\": false}, {\"text\": \"Update when Steve Clee can attend course and email\", \"done\": false}], \"AEi&T Assessments BEFORE END OF August\": [{\"text\": \"Consolidate information and easy to read\", \"done\": true}, {\"text\": \"Assignment 1 read, understood, & drafted\", \"done\": true}, {\"text\": \"Assignment 1 sent\", \"done\": true}, {\"text\": \"Assignment 1 adjustments\", \"done\": false}, {\"text\": \"Assignment 2 read, understood, & drafted\", \"done\": false}, {\"text\": \"Assignment 2 sent\", \"done\": false}, {\"text\": \"Assignment 2 adjustments\", \"done\": false}, {\"text\": \"Assignment 3 read, understood, & drafted\", \"done\": false}, {\"text\": \"Assignment 3 sent\", \"done\": false}, {\"text\": \"Assignment 3 adjustments\", \"done\": false}, {\"text\": \"Micro-Teach Planned\", \"done\": false}, {\"text\": \"Micro-Teach completed\", \"done\": false}, {\"text\": \"Assignment 4 completed\", \"done\": false}, {\"text\": \"All parts submitted, corrected where required, and courses completed.\", \"done\": false}], \"Fiesta\": [{\"text\": \"Find Front Wing\", \"done\": false}, {\"text\": \"Order Suspension\", \"done\": false}, {\"text\": \"Order Tyres\", \"done\": false}, {\"text\": \"Carry out repairs\", \"done\": false}, {\"text\": \"Mot/Retest?\", \"done\": false}, {\"text\": \"Rear Bumper\", \"done\": false}], \"James \\u2014 meeting, e-learning, missing items, staff qualifications\": [{\"text\": \"Discuss Priority List\", \"done\": true}, {\"text\": \"James received login details for Rise360\", \"done\": true}, {\"text\": \"James working on Managers guide to Fettle\", \"done\": true}, {\"text\": \"James to update ICT Lists and TS&WI\", \"done\": true}, {\"text\": \"Start planning Fettle ICT rollout\", \"done\": false}], \"NTDA Roadside working & Site\": [{\"text\": \"Find out from Dean where we are looking to go with this? Spare only or partial tyre job?\", \"done\": false}, {\"text\": \"Chase Alan for details and guidance, he said he had contacts but has not forwarded details?\", \"done\": false}, {\"text\": \"Plan what the training will look like, do the team need separate training to deliver this?\", \"done\": false}], \"Update Task Manager\": [{\"text\": \"Steps are too large and not easy to see on one page\", \"done\": false}, {\"text\": \"Could there be a smarter dash display\", \"done\": false}, {\"text\": \"Merge some of the tasks where possible like the Fettle James tasks that cover the same parts like ICT?\", \"done\": false}], \"Managing Employee Relations Course\": [{\"text\": \"Speak to Alan, is this needed and when\", \"done\": false}, {\"text\": \"Book course on SABA\", \"done\": false}, {\"text\": \"Course completed\", \"done\": false}], \"Finish Fettle checklists\": [{\"text\": \"Complete Final Checklists\", \"done\": true}, {\"text\": \"Build course\", \"done\": false}, {\"text\": \"Build Classes\", \"done\": false}, {\"text\": \"Add checklists to Classes\", \"done\": false}, {\"text\": \"Compare all checklists to see what services sign off?\", \"done\": false}], \"Support Plan\": [{\"text\": \"Team structure\", \"done\": false}, {\"text\": \"Get visibility first \\u2014 Ask Richard to flag issues to you before acting where possible.\", \"done\": false}, {\"text\": \"Acknowledge without rewarding over-ownership \\u2014 \\\"Thanks for flagging it \\u2014 leave that with me/the relevant person now.\\\"\", \"done\": false}, {\"text\": \"Redirect responsibility calmly \\u2014 \\\"That wasn't yours to sort, but I appreciate you making me aware.\\\"\", \"done\": false}, {\"text\": \"Use the team reset to change expectations across the smaller team \\u2014 visible acknowledgement, clear ownership, no hidden side conversations.\", \"done\": false}, {\"text\": \"Only tackle Richard's communication style gently once pressure reduces \\u2014 not now as a big issue, but later through small private reflections.\", \"done\": false}, {\"text\": \"Do not try to force wider team relationships \\u2014 let changed actions rebuild trust over time.\", \"done\": false}], \"Mobile Training \\u2014 get system access and learn how to use\": [{\"text\": \"Get A login\", \"done\": false}, {\"text\": \"Get Dan and Richard to show me how to use it\", \"done\": false}, {\"text\": \"Get Dan and Richard to show me how to view the training gant\", \"done\": false}, {\"text\": \"Learn how to view completed jobs in the training system\", \"done\": false}, {\"text\": \"Build a tracker to check completion\", \"done\": false}], \"Start Fettle ICT Rollout\": [{\"text\": \"ICT Lists and TS&WI added to SABA\", \"done\": false}, {\"text\": \"Fastest route to sign off multiple checklists\", \"done\": false}, {\"text\": \"ICT's marked as competent\", \"done\": false}, {\"text\": \"ICT training for signoff\", \"done\": false}, {\"text\": \"Any equipment requirements\", \"done\": false}, {\"text\": \"Priority list, who is most urgent to have signed off\", \"done\": false}], \"Get Team to complete SAGE Details\": [{\"text\": \"Danny Ramm\", \"done\": true}, {\"text\": \"James Scobie\", \"done\": true}, {\"text\": \"James Wells (Does not have sage yet 15/06/2026)\", \"done\": false}, {\"text\": \"Richard Sawyer\", \"done\": true}], \"Update Mobile courses and trainer notes\": [{\"text\": \"Make a list of week 1 updates required and where they sit, days, sessions etc\", \"done\": false}, {\"text\": \"Update week 1 slides and original trainer notes\", \"done\": false}, {\"text\": \"Build week 1 new trainer notes\", \"done\": false}, {\"text\": \"Make a list of week 2 updates required and where they sit, days, sessions etc\", \"done\": false}, {\"text\": \"Update week 2 slides and original trainer notes\", \"done\": false}, {\"text\": \"Build week 2 new trainer notes\", \"done\": false}, {\"text\": \"Add new Courses to the relevant folders\", \"done\": false}, {\"text\": \"Look to see if LMTT is still going to be required\", \"done\": false}, {\"text\": \"Check if Trainee course may return?\", \"done\": false}], \"Handout Folder \\u2014 VCC, VHC, Auto4, Mobile Matters ALL DIGITAL\": [{\"text\": \"Add all relevant parts to folder\", \"done\": true}, {\"text\": \"Start to build VHC and VCC in Excel\", \"done\": true}, {\"text\": \"Lock VHC/VCC\", \"done\": false}, {\"text\": \"Trial\", \"done\": true}, {\"text\": \"Add to Folder\", \"done\": false}], \"Build LMTT Report\": [{\"text\": \"Start Planning How to\", \"done\": true}, {\"text\": \"Build the How To Machine\", \"done\": true}, {\"text\": \"Download Reports from SABA\", \"done\": true}, {\"text\": \"Add into System\", \"done\": true}, {\"text\": \"Help Dan Understand Report\", \"done\": true}, {\"text\": \"Email Templates for approval flow\", \"done\": true}, {\"text\": \"Tracker Built\", \"done\": true}, {\"text\": \"Email Templates for readiness\", \"done\": true}, {\"text\": \"Hand over to Dan\", \"done\": true}, {\"text\": \"Build Analytics Report in SABA for KFMT33 and T214, email me and Dan\", \"done\": true}, {\"text\": \"Automate updates\", \"done\": true}, {\"text\": \"Automation summary emails needs work for reports\", \"done\": false}, {\"text\": \"Automate weekly tracker update for everyone\", \"done\": false}, {\"text\": \"Test workflow\", \"done\": false}, {\"text\": \"Second Month Testing\", \"done\": false}, {\"text\": \"Third Month Testing\", \"done\": false}], \"Need To Get Done\": [{\"text\": \"Pick up Tablets\", \"done\": true}, {\"text\": \"Make a reminder and set date for when Tablets run out 4th sept last tablet.\", \"done\": false}, {\"text\": \"Calendar reminders for birthdays etc\", \"done\": false}, {\"text\": \"Build Brain dump\", \"done\": false}, {\"text\": \"Update ADHD Task Manager with a personal page\", \"done\": false}, {\"text\": \"Build a daily landing page for Tasks to complete\", \"done\": false}, {\"text\": \"Maybe the ADHD Task Manager needs dates adding to it? Both when Added and When Due?\", \"done\": false}, {\"text\": \"Create a new task tracker\", \"done\": false}, {\"text\": \"James and Richard assessment issue?\", \"done\": true}], \"Danny Ramm Van booked in\": [{\"text\": \"Emailed Janet Thornycroft 11/05/2026 by Dan Ramm\", \"done\": true}, {\"text\": \"Master Tech looking 15/05/2026\", \"done\": true}, {\"text\": \"Sent Email to chase to Janet Thorneyccoft 25/5/26\", \"done\": true}, {\"text\": \"Next step?\", \"done\": false}]}";
+const PERSONAL_IMPORT_JSON = "[{\"type\":\"task\",\"name\":\"Expenses\",\"notes\":\"\",\"priority\":\"Medium\",\"urgent\":false,\"dueDate\":\"\",\"reviewDate\":\"\",\"parked\":false,\"parkReason\":\"\",\"parkReviewDate\":\"\",\"recurrence\":null,\"steps\":[{\"text\":\"Gather receipts\",\"done\":false},{\"text\":\"Fill in form\",\"done\":false},{\"text\":\"Submit\",\"done\":false}],\"today\":false,\"quickwin\":false,\"completed\":false,\"completedDate\":null,\"source\":\"notion\",\"workspace\":\"personal\"},{\"type\":\"task\",\"name\":\"Adderstone Durham\",\"notes\":\"\",\"priority\":\"Medium\",\"urgent\":false,\"dueDate\":\"\",\"reviewDate\":\"\",\"parked\":false,\"parkReason\":\"\",\"parkReviewDate\":\"\",\"recurrence\":null,\"steps\":[{\"text\":\"Clarify what action is needed\",\"done\":false},{\"text\":\"Make contact / progress\",\"done\":false}],\"today\":false,\"quickwin\":false,\"completed\":false,\"completedDate\":null,\"source\":\"notion\",\"workspace\":\"personal\"},{\"type\":\"task\",\"name\":\"Email Gavin Schaller re injections — ⏸ Follow up email sent 20/3/26\",\"notes\":\"Already emailed 06/03/26 and 09/03/26. Chase again if no reply by 19/03/26. Email: office@gavinschaller.com\",\"priority\":\"Medium\",\"urgent\":false,\"dueDate\":\"2026-03-19\",\"reviewDate\":\"\",\"parked\":false,\"parkReason\":\"\",\"parkReviewDate\":\"\",\"recurrence\":null,\"steps\":[],\"today\":false,\"quickwin\":false,\"completed\":false,\"completedDate\":null,\"source\":\"notion\",\"workspace\":\"personal\"},{\"type\":\"task\",\"name\":\"Fiesta\",\"notes\":\"\",\"priority\":\"Medium\",\"urgent\":false,\"dueDate\":\"\",\"reviewDate\":\"\",\"parked\":false,\"parkReason\":\"\",\"parkReviewDate\":\"\",\"recurrence\":null,\"steps\":[{\"text\":\"Find Front Wing\",\"done\":false},{\"text\":\"Order Suspension\",\"done\":false},{\"text\":\"Order Tyres\",\"done\":false},{\"text\":\"Carry out repairs\",\"done\":false},{\"text\":\"Mot/Retest?\",\"done\":false},{\"text\":\"Rear Bumper\",\"done\":false}],\"today\":false,\"quickwin\":false,\"completed\":false,\"completedDate\":null,\"source\":\"notion\",\"workspace\":\"personal\"},{\"type\":\"task\",\"name\":\"Shed\",\"notes\":\"\",\"priority\":\"Medium\",\"urgent\":false,\"dueDate\":\"\",\"reviewDate\":\"\",\"parked\":false,\"parkReason\":\"\",\"parkReviewDate\":\"\",\"recurrence\":null,\"steps\":[{\"text\":\"Tidy Space\",\"done\":false},{\"text\":\"Ventilation\",\"done\":false},{\"text\":\"Set up Engraver\",\"done\":false},{\"text\":\"Step 3\",\"done\":false},{\"text\":\"Decide: standing desk or regular desk?\",\"done\":true},{\"text\":\"Measure shed space for desk/work area\",\"done\":true},{\"text\":\"Measure remaining space for resin printer and laser engraver unit\",\"done\":true},{\"text\":\"Browse standing desk options\",\"done\":true},{\"text\":\"Research shelving/unit options for printers\",\"done\":true},{\"text\":\"Decide what storage/shelving to buy\",\"done\":true},{\"text\":\"Make a list of anything else needed (cable management, lighting, etc.)\",\"done\":false},{\"text\":\"Clear out the shed — remove anything that doesn't belong\",\"done\":false},{\"text\":\"Sort through existing shed contents: keep / donate / bin\",\"done\":false},{\"text\":\"Order/buy desk\",\"done\":true},{\"text\":\"Order/buy shelving unit for printers\",\"done\":true},{\"text\":\"Assemble desk\",\"done\":true},{\"text\":\"Assemble shelving unit\",\"done\":true},{\"text\":\"Move resin printer into shed\",\"done\":false},{\"text\":\"Arrange cables and tidy up\",\"done\":true},{\"text\":\"Final tidy and review the space\",\"done\":false}],\"today\":false,\"quickwin\":false,\"completed\":false,\"completedDate\":null,\"source\":\"notion\",\"workspace\":\"personal\"},{\"type\":\"task\",\"name\":\"Support Plan\",\"notes\":\"\",\"priority\":\"Medium\",\"urgent\":false,\"dueDate\":\"\",\"reviewDate\":\"\",\"parked\":false,\"parkReason\":\"\",\"parkReviewDate\":\"\",\"recurrence\":null,\"steps\":[{\"text\":\"Team structure\",\"done\":false},{\"text\":\"Get visibility first — Ask Richard to flag issues to you before acting where possible.\",\"done\":false},{\"text\":\"Acknowledge without rewarding over-ownership — \\\"Thanks for flagging it — leave that with me/the relevant person now.\\\"\",\"done\":false},{\"text\":\"Redirect responsibility calmly — \\\"That wasn't yours to sort, but I appreciate you making me aware.\\\"\",\"done\":false},{\"text\":\"Use the team reset to change expectations across the smaller team — Visible acknowledgement, clear ownership, no hidden side conversations.\",\"done\":false},{\"text\":\"Only tackle Richard's communication style gently once pressure reduces — Not now as a big issue, but later through small private reflections.\",\"done\":false},{\"text\":\"Do not try to force wider team relationships — Let changed actions rebuild trust over time.\",\"done\":false}],\"today\":false,\"quickwin\":false,\"completed\":false,\"completedDate\":null,\"source\":\"notion\",\"workspace\":\"personal\"},{\"type\":\"task\",\"name\":\"Update Task Manager\",\"notes\":\"\",\"priority\":\"Medium\",\"urgent\":false,\"dueDate\":\"\",\"reviewDate\":\"\",\"parked\":false,\"parkReason\":\"\",\"parkReviewDate\":\"\",\"recurrence\":null,\"steps\":[{\"text\":\"Steps are too large and not easy to see on one page\",\"done\":false},{\"text\":\"Could there be a smarter dash display\",\"done\":false},{\"text\":\"Merge some of the tasks where possible like the Fettle James tasks that cover the same parts like ICT?\",\"done\":false}],\"today\":false,\"quickwin\":false,\"completed\":false,\"completedDate\":null,\"source\":\"notion\",\"workspace\":\"personal\"},{\"type\":\"project\",\"name\":\"Darts Wrist Support\",\"notes\":\"\",\"priority\":\"Medium\",\"urgent\":false,\"dueDate\":\"\",\"reviewDate\":\"\",\"parked\":false,\"parkReason\":\"\",\"parkReviewDate\":\"\",\"recurrence\":null,\"steps\":[{\"text\":\"Step 1\",\"done\":false},{\"text\":\"Step 2\",\"done\":false},{\"text\":\"Step 3\",\"done\":false}],\"today\":false,\"quickwin\":false,\"completed\":false,\"completedDate\":null,\"source\":\"notion\",\"workspace\":\"personal\"},{\"type\":\"task\",\"name\":\"Kitchen\",\"notes\":\"\",\"priority\":\"High\",\"urgent\":false,\"dueDate\":\"\",\"reviewDate\":\"\",\"parked\":false,\"parkReason\":\"\",\"parkReviewDate\":\"\",\"recurrence\":null,\"steps\":[{\"text\":\"Take down Vivarium\",\"done\":false},{\"text\":\"Move fridge\",\"done\":false},{\"text\":\"But Cupboards\",\"done\":false},{\"text\":\"Build unit\",\"done\":false},{\"text\":\"Move 3D Printer\",\"done\":false},{\"text\":\"Put tools away\",\"done\":false},{\"text\":\"Look at kitchen and decide where filament printer will live (In the cupboards)\",\"done\":false},{\"text\":\"Measure the space available\",\"done\":false},{\"text\":\"List what storage/shelving needed for printer supplies and filament\",\"done\":false},{\"text\":\"Browse shelving/storage options that fit the space\",\"done\":false},{\"text\":\"Decide what to buy\",\"done\":false},{\"text\":\"Clear out the area where storage will go\",\"done\":false},{\"text\":\"Sort through existing kitchen clutter: keep / donate / bin\",\"done\":false},{\"text\":\"Organise filament and supplies onto shelving\",\"done\":false},{\"text\":\"Final tidy and review the space\",\"done\":false}],\"today\":false,\"quickwin\":false,\"completed\":false,\"completedDate\":null,\"source\":\"notion\",\"workspace\":\"personal\"},{\"type\":\"project\",\"name\":\"Laser Engraver\",\"notes\":\"\",\"priority\":\"Medium\",\"urgent\":false,\"dueDate\":\"\",\"reviewDate\":\"\",\"parked\":false,\"parkReason\":\"\",\"parkReviewDate\":\"\",\"recurrence\":null,\"steps\":[{\"text\":\"Build a riser\",\"done\":false},{\"text\":\"Set up roller\",\"done\":false},{\"text\":\"Organise accessories\",\"done\":false},{\"text\":\"Magnetic hold down for honeycomb\",\"done\":false},{\"text\":\"Settings for Lasers and Materials\",\"done\":false},{\"text\":\"Sort Materials\",\"done\":false}],\"today\":false,\"quickwin\":false,\"completed\":false,\"completedDate\":null,\"source\":\"notion\",\"workspace\":\"personal\"},{\"type\":\"task\",\"name\":\"Bedroom\",\"notes\":\"\",\"priority\":\"High\",\"urgent\":false,\"dueDate\":\"\",\"reviewDate\":\"\",\"parked\":false,\"parkReason\":\"\",\"parkReviewDate\":\"\",\"recurrence\":null,\"steps\":[{\"text\":\"Go through clothes\",\"done\":false},{\"text\":\"Fix wardrobe\",\"done\":false},{\"text\":\"Tidy behind wardrobe\",\"done\":false},{\"text\":\"Clean & Tidy\",\"done\":false},{\"text\":\"Arrange airsoft gear\",\"done\":false},{\"text\":\"Shoe stacker\",\"done\":false},{\"text\":\"Walk through bedroom and identify what needs to go\",\"done\":false},{\"text\":\"Decide where airsoft storage area will be\",\"done\":true},{\"text\":\"Measure the space available\",\"done\":true},{\"text\":\"Decide what storage solution you need (shelving, cases, hooks, boxes?)\",\"done\":false},{\"text\":\"Browse storage options for airsoft gear\",\"done\":true},{\"text\":\"Decide what to buy\",\"done\":true},{\"text\":\"Order/buy storage\",\"done\":true},{\"text\":\"Go through bedroom items — make a keep / donate / bin pile\",\"done\":false},{\"text\":\"Actually remove the donate/bin pile (don't let it sit there!)\",\"done\":false},{\"text\":\"Clear the designated airsoft area\",\"done\":false},{\"text\":\"Assemble/install storage\",\"done\":true},{\"text\":\"Final tidy and review the space\",\"done\":false}],\"today\":false,\"quickwin\":false,\"completed\":false,\"completedDate\":null,\"source\":\"notion\",\"workspace\":\"personal\"},{\"type\":\"task\",\"name\":\"Livingroom\",\"notes\":\"\",\"priority\":\"High\",\"urgent\":false,\"dueDate\":\"\",\"reviewDate\":\"\",\"parked\":false,\"parkReason\":\"\",\"parkReviewDate\":\"\",\"recurrence\":null,\"steps\":[{\"text\":\"Go through stuff in boxes/bags\",\"done\":false},{\"text\":\"Tidy Sofa\",\"done\":false},{\"text\":\"Clean & Tidy\",\"done\":false},{\"text\":\"Build display case\",\"done\":false},{\"text\":\"Set up WIFI router\",\"done\":false},{\"text\":\"Confirm shed, kitchen and bedroom are all sorted\",\"done\":false},{\"text\":\"Take shed items to the shed\",\"done\":false},{\"text\":\"Take kitchen items to the kitchen\",\"done\":false},{\"text\":\"Take bedroom items to the bedroom\",\"done\":false},{\"text\":\"Put donate items in a bag and schedule a charity shop run\",\"done\":false},{\"text\":\"Put bin items in the bin (do this immediately)\",\"done\":false},{\"text\":\"Break down and recycle the empty boxes\",\"done\":false},{\"text\":\"Final review — enjoy the space!\",\"done\":false}],\"today\":false,\"quickwin\":false,\"completed\":false,\"completedDate\":null,\"source\":\"notion\",\"workspace\":\"personal\"},{\"type\":\"task\",\"name\":\"Tool Cupboard\",\"notes\":\"\",\"priority\":\"High\",\"urgent\":false,\"dueDate\":\"\",\"reviewDate\":\"\",\"parked\":false,\"parkReason\":\"\",\"parkReviewDate\":\"\",\"recurrence\":null,\"steps\":[{\"text\":\"Clean Milwaukee cases\",\"done\":false},{\"text\":\"Arrange tools in Milwaukee cases\",\"done\":false},{\"text\":\"Sort tool and remove old tools not used\",\"done\":false},{\"text\":\"Tidy & Clean\",\"done\":false}],\"today\":false,\"quickwin\":false,\"completed\":false,\"completedDate\":null,\"source\":\"notion\",\"workspace\":\"personal\"},{\"type\":\"project\",\"name\":\"Shed Automation\",\"notes\":\"\",\"priority\":\"Medium\",\"urgent\":false,\"dueDate\":\"\",\"reviewDate\":\"\",\"parked\":false,\"parkReason\":\"\",\"parkReviewDate\":\"\",\"recurrence\":null,\"steps\":[{\"text\":\"Step 1\",\"done\":false},{\"text\":\"Step 2\",\"done\":false},{\"text\":\"Step 3\",\"done\":false}],\"today\":false,\"quickwin\":false,\"completed\":false,\"completedDate\":null,\"source\":\"notion\",\"workspace\":\"personal\"},{\"type\":\"task\",\"name\":\"Laser Engraver Riser\",\"notes\":\"\",\"priority\":\"Medium\",\"urgent\":false,\"dueDate\":\"\",\"reviewDate\":\"\",\"parked\":false,\"parkReason\":\"\",\"parkReviewDate\":\"\",\"recurrence\":null,\"steps\":[{\"text\":\"Step 1\",\"done\":false},{\"text\":\"Step 2\",\"done\":false},{\"text\":\"Step 3\",\"done\":false}],\"today\":false,\"quickwin\":false,\"completed\":false,\"completedDate\":null,\"source\":\"notion\",\"workspace\":\"personal\"},{\"type\":\"task\",\"name\":\"Brain Dump\",\"notes\":\"\",\"priority\":\"Medium\",\"urgent\":false,\"dueDate\":\"\",\"reviewDate\":\"\",\"parked\":false,\"parkReason\":\"\",\"parkReviewDate\":\"\",\"recurrence\":null,\"steps\":[{\"text\":\"Step 1\",\"done\":false},{\"text\":\"Step 2\",\"done\":false},{\"text\":\"Step 3\",\"done\":false}],\"today\":false,\"quickwin\":false,\"completed\":false,\"completedDate\":null,\"source\":\"notion\",\"workspace\":\"personal\"},{\"type\":\"task\",\"name\":\"Landing\",\"notes\":\"\",\"priority\":\"Medium\",\"urgent\":false,\"dueDate\":\"\",\"reviewDate\":\"\",\"parked\":false,\"parkReason\":\"\",\"parkReviewDate\":\"\",\"recurrence\":null,\"steps\":[{\"text\":\"Move all clothes and sort\",\"done\":false},{\"text\":\"Arrange/Relocate wood\",\"done\":false},{\"text\":\"Storage above the stairs\",\"done\":false},{\"text\":\"Clean & Tidy\",\"done\":false}],\"today\":false,\"quickwin\":false,\"completed\":false,\"completedDate\":null,\"source\":\"notion\",\"workspace\":\"personal\"},{\"type\":\"task\",\"name\":\"Airsoft\",\"notes\":\"\",\"priority\":\"Medium\",\"urgent\":false,\"dueDate\":\"\",\"reviewDate\":\"\",\"parked\":false,\"parkReason\":\"\",\"parkReviewDate\":\"\",\"recurrence\":null,\"steps\":[{\"text\":\"Renew Membership & Ukara\",\"done\":false},{\"text\":\"Start booking Games\",\"done\":false},{\"text\":\"Clean and maintain gear\",\"done\":false}],\"today\":false,\"quickwin\":false,\"completed\":false,\"completedDate\":null,\"source\":\"notion\",\"workspace\":\"personal\"},{\"type\":\"task\",\"name\":\"Garden\",\"notes\":\"\",\"priority\":\"High\",\"urgent\":false,\"dueDate\":\"\",\"reviewDate\":\"\",\"parked\":false,\"parkReason\":\"\",\"parkReviewDate\":\"\",\"recurrence\":null,\"steps\":[{\"text\":\"Walk the garden and take photos of the current state\",\"done\":false},{\"text\":\"Decide where the storage boxes will be permanently positioned\",\"done\":false},{\"text\":\"Measure the garden area for the artificial grass\",\"done\":false},{\"text\":\"Sketch a rough layout\",\"done\":false},{\"text\":\"Research artificial grass installation (DIY or hire someone?)\",\"done\":false},{\"text\":\"Get a quote if hiring someone, or research tools/materials needed for DIY\",\"done\":false},{\"text\":\"Build or buy a platform/base for the storage boxes\",\"done\":false},{\"text\":\"Position and secure the storage boxes\",\"done\":false},{\"text\":\"Organise contents of the storage boxes\",\"done\":false},{\"text\":\"Clear the garden area (remove weeds, debris, existing grass if needed)\",\"done\":false},{\"text\":\"Level the ground or add a base layer if needed\",\"done\":false},{\"text\":\"Lay the artificial grass\",\"done\":false},{\"text\":\"Secure edges and trim to fit\",\"done\":false}],\"today\":false,\"quickwin\":false,\"completed\":false,\"completedDate\":null,\"source\":\"notion\",\"workspace\":\"personal\"}]";
+let data = { items: [], quickCaptures: [], history: [], order: {}, currentWorkspace: 'work', expanded: {} };
+let view = { page: 'landing' };
+let loaded = false;
+let currentUser = null;
+
+const SUPABASE_URL = 'https://auuqwckkrhkatfgfgxtf.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_t_Mxh8PZMVo7Kr6rtygkwQ_KF3YB_Bk';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+/* ---------- Supabase-backed data layer ---------- */
+function toItemRow(it){
+  return {
+    id: it.id, user_id: currentUser.id, workspace: it.workspace, type: it.type, name: it.name,
+    notes: it.notes||'', priority: it.priority||null, urgent: !!it.urgent,
+    due_date: it.dueDate||null, review_date: it.reviewDate||null,
+    parked: !!it.parked, park_reason: it.parkReason||'', park_review_date: it.parkReviewDate||null,
+    recurrence: it.recurrence||null, today: !!it.today, quickwin: !!it.quickwin,
+    completed: !!it.completed, completed_date: it.completedDate||null,
+    created_date: it.createdDate||todayISO(), source: it.source||null,
+    steps: it.steps||[], remind_enabled: !!it.remindEnabled, remind_source: it.remindSource||null,
+    reminder_last_sent: it.reminderLastSent||null
+  };
+}
+function fromItemRow(r){
+  return {
+    id: r.id, workspace: r.workspace, type: r.type, name: r.name, notes: r.notes||'',
+    priority: r.priority, urgent: r.urgent, dueDate: r.due_date||'', reviewDate: r.review_date||'',
+    parked: r.parked, parkReason: r.park_reason||'', parkReviewDate: r.park_review_date||'',
+    recurrence: r.recurrence||null, today: r.today, quickwin: r.quickwin,
+    completed: r.completed, completedDate: r.completed_date||null,
+    createdDate: r.created_date, source: r.source||null, steps: r.steps||[],
+    remindEnabled: r.remind_enabled, remindSource: r.remind_source, reminderLastSent: r.reminder_last_sent
+  };
+}
+function toQcRow(q){ return { id:q.id, user_id:currentUser.id, text:q.text, urgent:!!q.urgent, created_date:q.createdDate||todayISO(), resolved:!!q.resolved, workspace:q.workspace }; }
+function fromQcRow(r){ return { id:r.id, text:r.text, urgent:r.urgent, createdDate:r.created_date, resolved:r.resolved, workspace:r.workspace }; }
+function toHistRow(h){ return { id:h.id, user_id:currentUser.id, date:h.date, type:h.type, text:h.text, parent_name:h.parentName||null, workspace:h.workspace }; }
+function fromHistRow(r){ return { id:r.id, date:r.date, type:r.type, text:r.text, parentName:r.parent_name, workspace:r.workspace }; }
+
+async function fetchAllData(){
+  const [itemsRes, qcRes, histRes, stateRes] = await Promise.all([
+    sb.from('items').select('*'),
+    sb.from('quick_captures').select('*'),
+    sb.from('history').select('*').order('date', {ascending:false}),
+    sb.from('app_state').select('*').eq('user_id', currentUser.id).maybeSingle()
+  ]);
+  data.items = (itemsRes.data||[]).map(fromItemRow);
+  data.quickCaptures = (qcRes.data||[]).map(fromQcRow);
+  data.history = (histRes.data||[]).map(fromHistRow);
+  const st = stateRes.data;
+  data.order = (st && st.order_map) || {};
+  data.currentWorkspace = (st && st.current_workspace) || 'work';
+  data.expanded = {};
+}
+async function saveData(){
+  if(!currentUser) return;
+  try{
+    if(data.items.length) await sb.from('items').upsert(data.items.map(toItemRow));
+    if(data.quickCaptures.length) await sb.from('quick_captures').upsert(data.quickCaptures.map(toQcRow));
+    if(data.history.length) await sb.from('history').upsert(data.history.map(toHistRow));
+    await sb.from('app_state').upsert({ user_id: currentUser.id, order_map: data.order||{}, current_workspace: data.currentWorkspace });
+  }catch(e){ console.error(e); showToast('Sync failed — check your connection'); }
+}
+
+async function importFromPastedJSON(text){
+  let parsed;
+  try{ parsed = JSON.parse(text); }catch(e){ showToast("That doesn't look like valid data — check you copied the whole thing"); return; }
+  data.items = parsed.items||[];
+  data.quickCaptures = parsed.quickCaptures||[];
+  data.history = parsed.history||[];
+  data.order = parsed.order||{};
+  data.currentWorkspace = parsed.currentWorkspace||'work';
+  data.expanded = {};
+  await saveData();
+  loaded = true;
+  view = {page:'landing'};
+  showToast(`Imported ${data.items.length} items`);
+  render();
+}
+
+function renderLogin(msg){
+  document.getElementById('app').innerHTML = `
+  <div style="max-width:400px;margin:80px auto;">
+    <div class="overlay-card">
+      <div class="overlay-top"><div class="overlay-title">Task Tracker</div></div>
+      ${msg? `<div class="empty" style="color:var(--urgent);">${msg}</div>`:''}
+      <label class="field-label">Email</label>
+      <input type="email" id="login-email" placeholder="you@example.com" />
+      <label class="field-label">Password</label>
+      <input type="password" id="login-password" placeholder="********" />
+      <div class="save-bar"><button class="btn-primary" id="login-btn">Sign in</button></div>
+    </div>
+  </div>`;
+  document.getElementById('login-btn').addEventListener('click', doLogin);
+  document.getElementById('login-password').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+}
+async function doLogin(){
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if(error){ renderLogin(error.message); return; }
+  boot();
+}
+function renderImportScreen(){
+  document.getElementById('app').innerHTML = `
+  <div style="max-width:600px;margin:60px auto;">
+    <div class="overlay-card">
+      <div class="overlay-top"><div class="overlay-title">Import your existing data</div></div>
+      <div class="empty" style="font-style:normal;">No data yet for this account. If you've been using an earlier Task Tracker file, open it, open the browser console (F12), run:<br><code style="color:var(--today);">copy(localStorage.getItem('task-tracker-v1'))</code><br>then paste what was copied below.</div>
+      <label class="field-label">Pasted data</label>
+      <textarea id="import-text" style="min-height:160px;"></textarea>
+      <div class="save-bar">
+        <button class="btn-primary" id="import-btn">Import</button>
+        <button class="btn-secondary" id="skip-import-btn">Start empty instead</button>
+      </div>
+    </div>
+  </div>`;
+  document.getElementById('import-btn').addEventListener('click', ()=>importFromPastedJSON(document.getElementById('import-text').value));
+  document.getElementById('skip-import-btn').addEventListener('click', ()=>{ loaded = true; view={page:'landing'}; render(); });
+}
+async function boot(){
+  const { data: sessionData } = await sb.auth.getSession();
+  if(!sessionData.session){ renderLogin(); return; }
+  currentUser = sessionData.session.user;
+  await fetchAllData();
+  loaded = true;
+  if(data.items.length===0 && data.quickCaptures.length===0 && data.history.length===0){
+    renderImportScreen();
+  } else {
+    view = {page:'landing'};
+    render();
+  }
+}
+function showToast(msg){
+  const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(showToast._t); showToast._t = setTimeout(()=>t.classList.remove('show'), 1600);
+}
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function fmtDate(d){ if(!d) return ''; const dt = new Date(d+'T00:00:00'); return dt.toLocaleDateString('en-GB',{day:'numeric',month:'short'}); }
+function isOverdue(item){ if(item.parked) return false; if(item.dueDate && item.dueDate < todayISO()) return true; return false; }
+function isUrgentOrOverdue(item){ return !item.completed && (item.urgent || isOverdue(item)); }
+function genId(type){ return type + '-' + (crypto.randomUUID?crypto.randomUUID().slice(0,8):Math.random().toString(36).slice(2,10)); }
+function uid(){ return Math.random().toString(36).slice(2,9); }
+function getItem(id){ return data.items.find(i=>i.id===id); }
+function progress(item){
+  if(!item.steps || item.steps.length===0) return null;
+  const total = item.steps.length; const done = item.steps.filter(s=>s.done).length;
+  return {done, total, pct: Math.round(done/total*100)};
+}
+function todayCount(){
+  let c=0; data.items.forEach(it=>{ if(it.workspace!==data.currentWorkspace) return; if(!it.steps || it.steps.length===0){ if(it.today) c++; } else it.steps.forEach(s=>{ if(s.today && !s.done) c++; }); }); return c;
+}
+function quickWinCount(){
+  let c=0; data.items.forEach(it=>{ if(it.workspace!==data.currentWorkspace) return; if(!it.steps || it.steps.length===0){ if(it.quickwin) c++; } else it.steps.forEach(s=>{ if(s.quickwin && !s.done) c++; }); }); return c;
+}
+function weekRange(){
+  const now = new Date(); const day = (now.getDay()+6)%7;
+  const monday = new Date(now); monday.setDate(now.getDate()-day);
+  const sunday = new Date(monday); sunday.setDate(monday.getDate()+6);
+  return [monday.toISOString().slice(0,10), sunday.toISOString().slice(0,10)];
+}
+function addToHistory(entry){ data.history.unshift({ id: uid(), date: todayISO(), ...entry }); }
+
+function addItem(type, fields){
+  const prefix = type==='task'?'T':type==='project'?'P':'R';
+  const id = genId(prefix);
+  const item = Object.assign({
+    id, type, name:'', notes:'', priority:'Medium', dueDate:'', reviewDate:'',
+    urgent:false, parked:false, parkReason:'', parkReviewDate:'',
+    recurrence: type==='recurring' ? {freq:'Weekly'} : null,
+    steps: [], today:false, quickwin:false, workspace: data.currentWorkspace,
+    createdDate: todayISO(), completed:false, completedDate:null
+  }, fields);
+  data.items.push(item); saveData(); return item;
+}
+function updateItem(id, fields){ const it = getItem(id); if(!it) return; Object.assign(it, fields); saveData(); }
+function deleteItem(id){ data.items = data.items.filter(i=>i.id!==id); sb.from('items').delete().eq('id', id).then(()=>{}); saveData(); }
+function addStep(itemId, text){
+  const it = getItem(itemId); if(!it || !text.trim()) return;
+  const stepNum = String(it.steps.length+1).padStart(2,'0');
+  it.steps.push({ id: itemId+'-S'+stepNum, text: text.trim(), done:false, today:false, quickwin:false });
+  saveData();
+}
+function toggleStepDone(itemId, stepId){
+  const it = getItem(itemId); const step = it.steps.find(s=>s.id===stepId);
+  step.done = !step.done;
+  if(step.done){ step.today=false; step.quickwin=false; addToHistory({type:'step', text: step.text, parentName: it.name, workspace: it.workspace}); }
+  saveData(); checkAllStepsComplete(it);
+}
+function checkAllStepsComplete(it){
+  if(it.steps.length>0 && it.steps.every(s=>s.done) && !it.completed){
+    setTimeout(()=>{ if(confirm(`All steps done for "${it.name}". Mark it complete?`)){ completeItem(it.id); render(); } }, 100);
+  }
+}
+function toggleToday(itemId, stepId){
+  const MAX = 5; const it = getItem(itemId);
+  const target = stepId ? it.steps.find(s=>s.id===stepId) : it;
+  if(!target.today && todayCount() >= MAX){ showToast("Today's Focus is full (5)"); return; }
+  target.today = !target.today; if(target.today) target.quickwin = false; saveData();
+}
+function toggleQuickWin(itemId, stepId){
+  const MAX = 5; const it = getItem(itemId);
+  const target = stepId ? it.steps.find(s=>s.id===stepId) : it;
+  if(!target.quickwin && quickWinCount() >= MAX){ showToast('Quick Wins is full (5)'); return; }
+  target.quickwin = !target.quickwin; if(target.quickwin) target.today = false; saveData();
+}
+function completeItem(id){
+  const it = getItem(id); if(!it) return;
+  it.completed = true; it.completedDate = todayISO(); it.today=false; it.quickwin=false;
+  addToHistory({type: it.type, text: it.name, parentName: null, workspace: it.workspace});
+  if(it.type==='recurring') rollRecurring(it);
+  saveData();
+}
+function rollRecurring(it){
+  const freq = it.recurrence.freq; let base = it.dueDate ? new Date(it.dueDate+'T00:00:00') : new Date();
+  if(freq==='Weekly') base.setDate(base.getDate()+7);
+  else if(freq==='Monthly') base.setMonth(base.getMonth()+1);
+  else if(freq==='Quarterly') base.setMonth(base.getMonth()+3);
+  it.dueDate = base.toISOString().slice(0,10); it.completed = false; it.completedDate = null;
+  it.steps.forEach(s=>{ s.done=false; s.today=false; s.quickwin=false; });
+}
+function parkItem(id, reason, reviewDate){ updateItem(id, {parked:true, parkReason:reason, parkReviewDate:reviewDate}); }
+function unparkItem(id){ updateItem(id, {parked:false, parkReason:'', parkReviewDate:''}); }
+function addQuickCapture(text, urgent){
+  if(!text.trim()) return;
+  data.quickCaptures.unshift({ id: uid(), text: text.trim(), urgent: !!urgent, createdDate: todayISO(), resolved:false, workspace: data.currentWorkspace });
+  saveData();
+}
+function completeQuickCapture(id){ const qc = data.quickCaptures.find(q=>q.id===id); qc.resolved = true; addToHistory({type:'capture', text: qc.text, parentName:null, workspace: qc.workspace}); saveData(); }
+function moveStep(itemId, stepId, dir){
+  const it = getItem(itemId); if(!it) return;
+  const idx = it.steps.findIndex(s=>s.id===stepId);
+  const newIdx = idx + dir;
+  if(newIdx<0 || newIdx>=it.steps.length) return;
+  const tmp = it.steps[idx]; it.steps[idx] = it.steps[newIdx]; it.steps[newIdx] = tmp;
+  saveData();
+}
+function toggleExpand(id){ data.expanded[id] = !data.expanded[id]; saveData(); render(); }
+
+/* ---------- manual item ordering (Tasks/Projects/Recurring/Parked) ---------- */
+function getCategoryItems(category){
+  const ws = i => i.workspace===data.currentWorkspace;
+  if(category==='tasks') return data.items.filter(i=>i.type==='task' && !i.completed && !i.parked && ws(i));
+  if(category==='projects') return data.items.filter(i=>i.type==='project' && !i.completed && !i.parked && ws(i));
+  if(category==='recurring') return data.items.filter(i=>i.type==='recurring' && !i.completed && ws(i));
+  if(category==='parked') return data.items.filter(i=>i.parked && !i.completed && ws(i));
+  return [];
+}
+function orderedList(category, items){
+  if(!data.order) data.order = {};
+  if(!data.order[category]) data.order[category] = [];
+  const ids = items.map(i=>i.id);
+  ids.forEach(id=>{ if(!data.order[category].includes(id)) data.order[category].push(id); });
+  const orderIds = data.order[category].filter(id=>ids.includes(id));
+  return orderIds.map(id=>items.find(i=>i.id===id));
+}
+function moveItemInCategory(category, id, dir){
+  const items = getCategoryItems(category);
+  const visibleIds = orderedList(category, items).map(i=>i.id);
+  const idx = visibleIds.indexOf(id);
+  const newIdx = idx + dir;
+  if(idx<0 || newIdx<0 || newIdx>=visibleIds.length) return;
+  const tmp = visibleIds[idx]; visibleIds[idx] = visibleIds[newIdx]; visibleIds[newIdx] = tmp;
+  data.order[category] = visibleIds;
+  saveData();
+}
+
+function sortPreview(list){
+  return [...list].sort((a,b)=>{
+    const ao = isUrgentOrOverdue(a) ? 0 : 1, bo = isUrgentOrOverdue(b) ? 0 : 1;
+    if(ao!==bo) return ao-bo;
+    const ad = a.dueDate || a.reviewDate || a.parkReviewDate || '9999';
+    const bd = b.dueDate || b.reviewDate || b.parkReviewDate || '9999';
+    if(ad!==bd) return ad<bd? -1:1;
+    const ap = progress(a)?.pct ?? -1, bp = progress(b)?.pct ?? -1;
+    if(ap!==bp) return bp-ap;
+    return (a.createdDate||'') < (b.createdDate||'') ? -1 : 1;
+  });
+}
+function escapeHtml(s){ const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
+function prioTag(p){ if(!p) return ''; return `<span class="tag prio-${p.toLowerCase()}">${p}</span>`; }
+
+/* ---------- render ---------- */
+function render(){
+  if(!loaded) return;
+  const app = document.getElementById('app');
+  if(view.page === 'landing'){ app.innerHTML = renderLanding(); attachLandingEvents(); }
+  else if(view.page === 'detail'){ app.innerHTML = renderDetailOverlay(view.id); attachOverlayEvents(); }
+  else if(view.page === 'add'){ app.innerHTML = renderAddOverlay(); attachOverlayEvents(); }
+  else if(view.page === 'list'){ app.innerHTML = renderListOverlay(view.category); attachOverlayEvents(); }
+}
+
+function renderLanding(){
+  const ws = i => i.workspace===data.currentWorkspace;
+  const tasks = getCategoryItems('tasks');
+  const projects = getCategoryItems('projects');
+  const parked = getCategoryItems('parked');
+  const recurring = getCategoryItems('recurring');
+  const urgentOverdue = data.items.filter(i=>!i.completed && isUrgentOrOverdue(i) && ws(i));
+  const openCaptures = data.quickCaptures.filter(q=>!q.resolved && ws(q));
+
+  const todayItems = [], quickWinItems = [];
+  data.items.forEach(it=>{
+    if(it.completed || !ws(it)) return;
+    if(!it.steps || it.steps.length===0){
+      if(it.today) todayItems.push({item:it, step:null});
+      if(it.quickwin) quickWinItems.push({item:it, step:null});
+    } else {
+      it.steps.forEach(s=>{ if(s.done) return; if(s.today) todayItems.push({item:it, step:s}); if(s.quickwin) quickWinItems.push({item:it, step:s}); });
+    }
+  });
+  const [wkStart, wkEnd] = weekRange();
+  const dailyWins = data.history.filter(h=>h.date===todayISO() && ws(h));
+  const weeklyWins = data.history.filter(h=>h.date>=wkStart && h.date<=wkEnd && ws(h));
+  const dateStr = new Date().toLocaleDateString('en-GB',{weekday:'long', day:'numeric', month:'long'});
+
+  return `
+  <div class="topbar">
+    <div class="brand"><div><h1>Task Tracker</h1><div class="sub">${dateStr}</div></div></div>
+    <div class="ws-toggle">
+      <button class="ws-btn ${data.currentWorkspace==='work'?'active':''}" data-workspace="work">💼 Work</button>
+      <button class="ws-btn ${data.currentWorkspace==='personal'?'active':''}" data-workspace="personal">🏠 Personal</button>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn-refresh" id="sync-btn">🟢 ${currentUser ? currentUser.email : ''} · Sign out</button>
+      <button class="btn-refresh" id="refresh-btn">Refresh</button>
+      <button class="btn-add" data-action="open-add">+ Add New</button>
+    </div>
+  </div>
+
+  <div class="pillrow">
+    <button class="pill c-today" data-scroll="today"><b>${todayItems.length}</b> Today</button>
+    <button class="pill c-capture" data-scroll="capture"><b>${openCaptures.length}</b> Quick Capture</button>
+    <button class="pill c-quickwin" data-scroll="quickwin"><b>${quickWinItems.length}</b> Quick Wins</button>
+    <button class="pill c-urgent" data-list="urgent"><b>${urgentOverdue.length}</b> Urgent / Overdue</button>
+    <button class="pill c-parked" data-list="parked"><b>${parked.length}</b> Parked / Waiting</button>
+    <button class="pill c-tasks" data-list="tasks"><b>${tasks.length}</b> Tasks</button>
+    <button class="pill c-projects" data-list="projects"><b>${projects.length}</b> Projects</button>
+    <button class="pill c-recurring" data-list="recurring"><b>${recurring.length}</b> Recurring</button>
+    <button class="pill c-wins"><b>${dailyWins.length}</b> Wins Today</button>
+  </div>
+
+  <div class="landing-grid">
+    <div class="col">
+      <div id="today">${sectionToday(todayItems)}</div>
+      <div id="quickwin">${sectionQuickWins(quickWinItems)}</div>
+      ${sectionUrgent(urgentOverdue)}
+      ${sectionParked(parked)}
+      ${sectionWins('Daily Wins', dailyWins, 'wins')}
+      ${sectionWins("Weekly Wins (Mon–Sun)", weeklyWins, 'wins')}
+    </div>
+    <div class="col">
+      <div id="capture">${sectionQuickCapture(openCaptures)}</div>
+      ${sectionItemList('Tasks','tasks',tasks,'tasks')}
+      ${sectionItemList('Recurring Tasks','recurring',recurring,'recurring')}
+      ${sectionItemList('Projects','projects',projects,'projects')}
+    </div>
+  </div>
+  <div class="footer-note">Everything here is only ever added, ordered or selected by you.</div>
+  `;
+}
+
+function nestedSteps(item){
+  if(!item.steps || item.steps.length===0) return '';
+  return `<div class="steps-nested">
+    ${item.steps.map((s,idx)=>`
+      <div class="step-nested-row">
+        <button class="row-check ${s.done?'checked':''}" style="width:16px;height:16px;" data-toggle-done="${item.id}|${s.id}"></button>
+        <div class="step-nested-text ${s.done?'done':''}">${escapeHtml(s.text)}</div>
+        <button class="mini-flag today ${s.today?'active':''}" data-toggle-today="${item.id}|${s.id}">Today</button>
+        <button class="mini-flag quickwin ${s.quickwin?'active':''}" data-toggle-qw="${item.id}|${s.id}">QW</button>
+        <button class="mini-flag" data-move-step="${item.id}|${s.id}|-1" ${idx===0?'disabled style="opacity:.3;"':''}>↑</button>
+        <button class="mini-flag" data-move-step="${item.id}|${s.id}|1" ${idx===item.steps.length-1?'disabled style="opacity:.3;"':''}>↓</button>
+      </div>`).join('')}
+    <div class="step-add-inline">
+      <input type="text" placeholder="Add a step…" data-inline-step-input="${item.id}" />
+      <button data-inline-step-add="${item.id}">Add</button>
+    </div>
+  </div>`;
+}
+
+function itemRow(item, colorKey, opts){
+  opts = opts || {};
+  const prog = progress(item);
+  const overdue = isOverdue(item);
+  const hasSteps = item.steps && item.steps.length>0;
+  const expanded = !!data.expanded[item.id];
+  let tags = prioTag(item.priority);
+  if(item.urgent) tags += `<span class="tag urgent">Urgent</span>`;
+  if(overdue) tags += `<span class="tag overdue">Overdue ${fmtDate(item.dueDate)}</span>`;
+  else if(item.dueDate) tags += `<span class="tag due">Due ${fmtDate(item.dueDate)}</span>`;
+  if(item.reviewDate) tags += `<span class="tag review">Review ${fmtDate(item.reviewDate)}</span>`;
+  let progHtml = prog ? `<div class="progress-mini">
+      <div class="progress-track"><div class="progress-fill" style="width:${prog.pct}%; background:var(--${colorKey})"></div></div>
+      <div class="progress-label">${prog.done}/${prog.total} · ${prog.pct}%</div>
+    </div>` : '';
+  const reorderHtml = opts.reorder ? `<div class="item-reorder">
+      <button class="mini-flag" data-move-item="${opts.category}|${item.id}|-1" ${opts.idx===0?'disabled style="opacity:.3;"':''}>↑</button>
+      <button class="mini-flag" data-move-item="${opts.category}|${item.id}|1" ${opts.idx===opts.total-1?'disabled style="opacity:.3;"':''}>↓</button>
+    </div>` : '';
+  return `<div class="row">
+    <div class="row-main">
+      ${hasSteps ? `<button class="expand-btn" data-toggle-expand="${item.id}">${expanded?'−':'+'}</button>` : `<span class="expand-spacer"></span>`}
+      <div class="row-body" data-open="${item.id}">
+        <div class="row-title">${escapeHtml(item.name)}</div>
+        <div class="row-meta">${tags}</div>
+        ${progHtml}
+      </div>
+      ${reorderHtml}
+    </div>
+    ${hasSteps && expanded ? nestedSteps(item) : ''}
+  </div>`;
+}
+
+function sectionToday(list){
+  const body = list.length ? list.map(({item,step})=>`
+    <div class="row"><div class="row-main">
+      <button class="row-check" data-complete-step="${item.id}|${step? step.id:''}"></button>
+      <div class="row-body" data-open="${item.id}">
+        <div class="row-title">${step?escapeHtml(step.text):escapeHtml(item.name)}${step?` <span class="step-of">— ${escapeHtml(item.name)}</span>`:''}</div>
+        <div class="row-meta">${prioTag(item.priority)}${item.dueDate?`<span class="tag due">Due ${fmtDate(item.dueDate)}</span>`:''}</div>
+      </div>
+    </div></div>`).join('') : `<div class="empty">Nothing selected — open a Task or Project and choose Today.</div>`;
+  return section("Today's Focus",'today', `<span class="hint">max 5, deliberately chosen</span>`, `${list.length}/5`, body);
+}
+function sectionQuickWins(list){
+  const body = list.length ? list.map(({item,step})=>`
+    <div class="row"><div class="row-main">
+      <button class="row-check" data-complete-step="${item.id}|${step? step.id:''}"></button>
+      <div class="row-body" data-open="${item.id}">
+        <div class="row-title">${step?escapeHtml(step.text):escapeHtml(item.name)}${step?` <span class="step-of">— ${escapeHtml(item.name)}</span>`:''}</div>
+        <div class="row-meta">${prioTag(item.priority)}</div>
+      </div>
+    </div></div>`).join('') : `<div class="empty">Spare 5–30 min? Pick one from a Task or Project.</div>`;
+  return section('Quick Wins','quickwin', '', `${list.length}/5`, body);
+}
+function sectionUrgent(list){
+  const shown = sortPreview(list).slice(0,5);
+  const body = shown.length ? shown.map(it=>itemRow(it,'urgent')).join('') : `<div class="empty">Nothing urgent or overdue.</div>`;
+  const foot = list.length ? `<button class="showall-inline" data-list="urgent" style="display:block;margin-top:6px;font-size:11.5px;font-weight:700;color:var(--urgent);">Show all Urgent / Overdue ›</button>` : '';
+  return section('Urgent / Overdue','urgent', '', `${list.length}`, body+foot, 'urgent');
+}
+function sectionParked(list){
+  const full = orderedList('parked', list);
+  const shown = full.slice(0,5);
+  const body = shown.length ? shown.map(it=>{
+    const idx = full.indexOf(it);
+    return `
+    <div class="row"><div class="row-main">
+      <span class="expand-spacer"></span>
+      <div class="row-body" data-open="${it.id}">
+        <div class="row-title">${escapeHtml(it.name)}</div>
+        <div class="row-meta">
+          <span class="tag due">Review ${fmtDate(it.parkReviewDate)||'—'}</span>
+          ${it.dueDate?`<span class="tag review">Due ${fmtDate(it.dueDate)}</span>`:''}
+        </div>
+        <div style="font-size:11.5px; color:var(--text-faint); margin-top:3px;">${escapeHtml(it.parkReason||'')}</div>
+      </div>
+      <div class="item-reorder">
+        <button class="mini-flag" data-move-item="parked|${it.id}|-1" ${idx===0?'disabled style="opacity:.3;"':''}>↑</button>
+        <button class="mini-flag" data-move-item="parked|${it.id}|1" ${idx===full.length-1?'disabled style="opacity:.3;"':''}>↓</button>
+      </div>
+    </div></div>`;
+  }).join('') : `<div class="empty">Nothing parked right now.</div>`;
+  const foot = list.length ? `<button class="showall-inline" data-list="parked" style="display:block;margin-top:6px;font-size:11.5px;font-weight:700;color:var(--parked);">Show all Parked / Waiting ›</button>` : '';
+  return section('Parked / Waiting','parked', '', `${list.length}`, body+foot);
+}
+function sectionQuickCapture(list){
+  const shown = list.slice(0,12);
+  const body = shown.length ? shown.map(qc=>`
+    <div class="qc-item ${qc.urgent?'urgent':''}">
+      <div class="qc-text">${escapeHtml(qc.text)}</div>
+      <div class="qc-actions">
+        <button class="qc-btn convert" data-convert-capture="${qc.id}">Convert</button>
+        <button class="qc-btn" data-complete-capture="${qc.id}">Done</button>
+      </div>
+    </div>`).join('') : `<div class="empty">Inbox empty. Type below whenever something crosses your mind.</div>`;
+  const inputBlock = `<div class="qc-input-row">
+      <input type="text" class="qc-input" id="qc-text-input" placeholder="Type a word or a sentence…" />
+      <button class="qc-urgent-toggle" id="qc-urgent-toggle">!</button>
+      <button class="qc-send" id="qc-send">Add</button>
+    </div>`;
+  const foot = list.length>12 ? `<button class="showall-inline" data-list="captures" style="display:block;margin-top:6px;font-size:11.5px;font-weight:700;color:var(--capture);">Show all Quick Captures ›</button>` : '';
+  return section('Quick Capture','capture', '', `${list.length}`, inputBlock+body+foot);
+}
+function sectionItemList(title, colorKey, list, category){
+  const full = orderedList(category, list);
+  const shown = full.slice(0,5);
+  const body = shown.length ? shown.map(it=>itemRow(it,colorKey,{reorder:true, category, idx:full.indexOf(it), total:full.length})).join('') : `<div class="empty">Nothing here yet.</div>`;
+  const foot = `<button class="showall-inline" data-list="${category}" style="display:block;margin-top:6px;font-size:11.5px;font-weight:700;color:var(--${colorKey});">Show all ${title} (${list.length}) ›</button>`;
+  return section(title,colorKey, '', `${list.length}`, body+foot);
+}
+function sectionWins(title, list, colorKey){
+  const body = list.length ? list.slice(0,8).map(h=>`
+    <div class="win-row"><span class="dot">✦</span>
+      <div><div>${escapeHtml(h.text)}</div>${h.parentName?`<div class="win-parent">${escapeHtml(h.parentName)}</div>`:''}</div>
+    </div>`).join('') : `<div class="empty">Nothing completed yet.</div>`;
+  return section(title,colorKey, '', `${list.length}`, body);
+}
+function section(title, colorKey, hintHtml, countText, bodyHtml){
+  return `<div class="section">
+    <div class="section-head" style="background:var(--${colorKey})">
+      <div>${title.toUpperCase()} ${hintHtml}</div>
+      <div class="section-count">${countText}</div>
+    </div>
+    <div class="section-body">${bodyHtml}</div>
+  </div>`;
+}
+
+function attachLandingEvents(){
+  document.querySelectorAll('[data-open]').forEach(el=>el.addEventListener('click', ()=>{ view = {page:'detail', id: el.dataset.open}; render(); }));
+  document.querySelectorAll('[data-list]').forEach(el=>el.addEventListener('click', ()=>{ view = {page:'list', category: el.dataset.list}; render(); }));
+  document.querySelectorAll('[data-scroll]').forEach(el=>el.addEventListener('click', ()=>{ document.getElementById(el.dataset.scroll)?.scrollIntoView({behavior:'smooth', block:'center'}); }));
+  document.querySelectorAll('[data-toggle-expand]').forEach(el=>el.addEventListener('click', (e)=>{ e.stopPropagation(); toggleExpand(el.dataset.toggleExpand); }));
+  document.querySelectorAll('[data-complete-step]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); const [itemId, stepId] = el.dataset.completeStep.split('|');
+    if(stepId) toggleStepDone(itemId, stepId); else completeItem(itemId); render();
+  }));
+  document.querySelectorAll('[data-toggle-done]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); const [itemId, stepId] = el.dataset.toggleDone.split('|'); toggleStepDone(itemId, stepId); render();
+  }));
+  document.querySelectorAll('[data-toggle-today]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); const [itemId, stepId] = el.dataset.toggleToday.split('|'); toggleToday(itemId, stepId||null); render();
+  }));
+  document.querySelectorAll('[data-toggle-qw]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); const [itemId, stepId] = el.dataset.toggleQw.split('|'); toggleQuickWin(itemId, stepId||null); render();
+  }));
+  document.querySelectorAll('[data-move-step]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); const [itemId, stepId, dir] = el.dataset.moveStep.split('|'); moveStep(itemId, stepId, parseInt(dir,10)); render();
+  }));
+  document.querySelectorAll('[data-move-item]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); const [category, id, dir] = el.dataset.moveItem.split('|'); moveItemInCategory(category, id, parseInt(dir,10)); render();
+  }));
+  document.querySelectorAll('[data-inline-step-add]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); const id = el.dataset.inlineStepAdd; const inp = document.querySelector(`[data-inline-step-input="${id}"]`);
+    if(inp.value.trim()){ addStep(id, inp.value); render(); }
+  }));
+  document.querySelectorAll('[data-inline-step-input]').forEach(el=>el.addEventListener('keydown', (e)=>{
+    if(e.key==='Enter'){ e.stopPropagation(); const id = el.dataset.inlineStepInput; if(el.value.trim()){ addStep(id, el.value); render(); } }
+  }));
+  document.querySelectorAll('[data-complete-capture]').forEach(el=>el.addEventListener('click', ()=>{ completeQuickCapture(el.dataset.completeCapture); render(); }));
+  document.querySelectorAll('[data-convert-capture]').forEach(el=>el.addEventListener('click', ()=>{
+    const qc = data.quickCaptures.find(q=>q.id===el.dataset.convertCapture); qc.resolved = true; saveData();
+    view = {page:'add', itemType:'task', itemWorkspace: qc.workspace, prefill:{name: qc.text, urgent: qc.urgent}}; render();
+  }));
+  const addBtn = document.getElementById('qc-send'), input = document.getElementById('qc-text-input'), urgentToggle = document.getElementById('qc-urgent-toggle');
+  let urgentOn = false;
+  if(urgentToggle) urgentToggle.addEventListener('click', ()=>{ urgentOn=!urgentOn; urgentToggle.classList.toggle('active', urgentOn); });
+  function doAdd(){ if(!input.value.trim()) return; addQuickCapture(input.value, urgentOn); input.value=''; urgentOn=false; render(); }
+  if(addBtn) addBtn.addEventListener('click', doAdd);
+  if(input) input.addEventListener('keydown', e=>{ if(e.key==='Enter') doAdd(); });
+  document.querySelector('[data-action="open-add"]')?.addEventListener('click', ()=>{ view = {page:'add', itemType:null, itemWorkspace: data.currentWorkspace}; render(); });
+  document.getElementById('refresh-btn')?.addEventListener('click', async ()=>{ await fetchAllData(); render(); showToast('Synced from server'); });
+  document.getElementById('sync-btn')?.addEventListener('click', async ()=>{ if(confirm('Sign out of Task Tracker?')){ await sb.auth.signOut(); location.reload(); } });
+  document.querySelectorAll('[data-workspace]').forEach(el=>el.addEventListener('click', ()=>{
+    data.currentWorkspace = el.dataset.workspace; saveData(); render();
+  }));
+}
+
+/* ---------- Add/Edit overlay ---------- */
+let pendingSteps = [];
+function renderAddOverlay(){
+  const editing = view.editId ? getItem(view.editId) : null;
+  const t = view.itemType || (editing ? editing.type : null);
+  const wsVal = view.itemWorkspace || (editing ? editing.workspace : null) || data.currentWorkspace;
+  view.itemWorkspace = wsVal;
+  const prefill = view.prefill || {};
+  const wsPicker = `
+    <label class="field-label">Workspace</label>
+    <div class="type-choice" style="margin-bottom:2px;">
+      <button class="type-btn ws ${wsVal==='work'?'active':''}" data-pick-ws="work">💼 Work</button>
+      <button class="type-btn ws ${wsVal==='personal'?'active':''}" data-pick-ws="personal">🏠 Personal</button>
+    </div>`;
+  const typePicker = `
+    <div class="type-choice">
+      <button class="type-btn task ${t==='task'?'active':''}" data-pick-type="task">Task</button>
+      <button class="type-btn project ${t==='project'?'active':''}" data-pick-type="project">Project</button>
+      <button class="type-btn recurring ${t==='recurring'?'active':''}" data-pick-type="recurring">Recurring</button>
+    </div>
+    ${editing && t!==editing.type ? `<div class="footer-note" style="margin-top:8px; color:var(--parked);">Switching to ${t} — its steps will carry over.</div>` : ''}`;
+  const form = t ? `
+    <label class="field-label">Name</label>
+    <input type="text" id="f-name" value="${escapeHtml(editing?editing.name:(prefill.name||''))}" placeholder="What is it?" />
+    <label class="field-label">Notes</label>
+    <textarea id="f-notes" placeholder="Short reminder or where the material lives…">${escapeHtml(editing?editing.notes:'')}</textarea>
+    <div class="row3">
+      <div><label class="field-label">Priority</label>
+        <select id="f-priority">
+          <option ${(editing?editing.priority:'Medium')==='High'?'selected':''}>High</option>
+          <option ${(editing?editing.priority:'Medium')==='Medium'?'selected':''}>Medium</option>
+          <option ${(editing?editing.priority:'Medium')==='Low'?'selected':''}>Low</option>
+        </select></div>
+      <div><label class="field-label">Due date</label><input type="date" id="f-due" value="${editing?editing.dueDate||'':''}" /></div>
+      <div><label class="field-label">Review date</label><input type="date" id="f-review" value="${editing?editing.reviewDate||'':''}" /></div>
+    </div>
+    ${t==='recurring' ? `<label class="field-label">Recurs</label>
+    <select id="f-freq">
+      <option ${editing?.recurrence?.freq==='Weekly'?'selected':''}>Weekly</option>
+      <option ${editing?.recurrence?.freq==='Monthly'?'selected':''}>Monthly</option>
+      <option ${editing?.recurrence?.freq==='Quarterly'?'selected':''}>Quarterly</option>
+    </select>` : ''}
+    <div class="checkline"><input type="checkbox" id="f-urgent" ${(editing?editing.urgent:prefill.urgent) ? 'checked':''}/><label for="f-urgent">Mark Urgent</label></div>
+    <label class="field-label" style="margin-top:18px;">Steps <span style="color:var(--text-faint); font-weight:500; text-transform:none;">(optional, live inside this item)</span></label>
+    <div class="step-list" id="step-list">
+      ${editing && editing.steps.length ? editing.steps.map(s=>`<div class="step-row"><div class="step-text ${s.done?'done':''}">${escapeHtml(s.text)}</div></div>`).join('') : `<div class="empty" style="padding:4px 2px;">No steps yet — add any below, in any order.</div>`}
+    </div>
+    <div class="step-add-row">
+      <input type="text" id="new-step-input" placeholder="Add a step…" />
+      <button class="btn-secondary" id="add-step-btn" style="padding:10px 16px;">Add</button>
+    </div>
+    <div class="save-bar">
+      <button class="btn-primary" id="save-item-btn">${editing?'Save changes':'Create '+t}</button>
+      <button class="btn-secondary" id="cancel-item-btn">Cancel</button>
+    </div>` : '';
+  return `<div class="overlay-backdrop" id="backdrop"><div class="overlay-card">
+    <div class="overlay-top"><div class="overlay-title">${editing? 'Edit item' : 'Add new'}</div><button class="overlay-close" id="close-overlay">✕</button></div>
+    ${wsPicker}${typePicker}${!t ? `<div class="footer-note" style="margin-top:14px;">Choose a type to continue</div>` : ''}${form}
+  </div></div>`;
+}
+
+function attachOverlayEvents(){
+  const backdrop = document.getElementById('backdrop');
+  const close = ()=>{ view = {page:'landing'}; pendingSteps=[]; render(); };
+  document.getElementById('close-overlay')?.addEventListener('click', close);
+  backdrop?.addEventListener('click', (e)=>{ if(e.target===backdrop) close(); });
+  document.getElementById('go-home')?.addEventListener('click', close);
+  document.querySelectorAll('[data-pick-type]').forEach(el=>el.addEventListener('click', ()=>{ view.itemType = el.dataset.pickType; render(); }));
+  document.querySelectorAll('[data-pick-ws]').forEach(el=>el.addEventListener('click', ()=>{ view.itemWorkspace = el.dataset.pickWs; render(); }));
+  document.getElementById('cancel-item-btn')?.addEventListener('click', close);
+  document.getElementById('add-step-btn')?.addEventListener('click', ()=>{
+    const inp = document.getElementById('new-step-input'); if(!inp.value.trim()) return;
+    if(view.editId){ addStep(view.editId, inp.value); render(); }
+    else { pendingSteps.push(inp.value.trim()); inp.value='';
+      const list = document.getElementById('step-list');
+      list.innerHTML = pendingSteps.map(s=>`<div class="step-row"><div class="step-text">${escapeHtml(s)}</div></div>`).join('') || `<div class="empty" style="padding:4px 2px;">No steps yet.</div>`;
+    }
+  });
+  document.getElementById('save-item-btn')?.addEventListener('click', ()=>{
+    const name = document.getElementById('f-name').value.trim();
+    if(!name){ showToast('Give it a name first'); return; }
+    const newType = view.itemType;
+    const fields = {
+      name, notes: document.getElementById('f-notes').value,
+      priority: document.getElementById('f-priority').value,
+      dueDate: document.getElementById('f-due').value, reviewDate: document.getElementById('f-review').value,
+      urgent: document.getElementById('f-urgent').checked,
+      workspace: view.itemWorkspace || data.currentWorkspace,
+    };
+    const freqEl = document.getElementById('f-freq');
+    fields.recurrence = newType==='recurring' ? {freq: freqEl ? freqEl.value : 'Weekly'} : null;
+
+    if(view.editId){
+      const existing = getItem(view.editId);
+      if(newType !== existing.type){
+        const prefix = newType==='task'?'T':newType==='project'?'P':'R';
+        const newId = genId(prefix);
+        const newSteps = existing.steps.map((s,idx)=>Object.assign({}, s, {id:newId+'-S'+String(idx+1).padStart(2,'0')}));
+        const newItem = Object.assign({}, existing, fields, {id:newId, type:newType, steps:newSteps});
+        const idx = data.items.findIndex(i=>i.id===existing.id);
+        data.items.splice(idx,1,newItem);
+        delete data.expanded[existing.id];
+        saveData();
+        view = {page:'detail', id:newId}; render();
+        showToast(`Changed to ${newType} — now ${newId}`);
+      } else {
+        updateItem(view.editId, fields); view = {page:'detail', id: view.editId}; render();
+      }
+    } else {
+      const it = addItem(newType, fields); pendingSteps.forEach(s=>addStep(it.id, s)); pendingSteps = []; saveData(); view = {page:'detail', id: it.id}; render();
+    }
+  });
+  document.querySelectorAll('[data-open]').forEach(el=>el.addEventListener('click', ()=>{ view = {page:'detail', id: el.dataset.open}; render(); }));
+  document.querySelectorAll('[data-toggle-today]').forEach(el=>el.addEventListener('click', ()=>{ const [itemId, stepId] = el.dataset.toggleToday.split('|'); toggleToday(itemId, stepId||null); render(); }));
+  document.querySelectorAll('[data-toggle-qw]').forEach(el=>el.addEventListener('click', ()=>{ const [itemId, stepId] = el.dataset.toggleQw.split('|'); toggleQuickWin(itemId, stepId||null); render(); }));
+  document.querySelectorAll('[data-toggle-done]').forEach(el=>el.addEventListener('click', ()=>{ const [itemId, stepId] = el.dataset.toggleDone.split('|'); toggleStepDone(itemId, stepId); render(); }));
+  document.querySelectorAll('[data-move-step]').forEach(el=>el.addEventListener('click', ()=>{ const [itemId, stepId, dir] = el.dataset.moveStep.split('|'); moveStep(itemId, stepId, parseInt(dir,10)); render(); }));
+  document.querySelectorAll('[data-move-item]').forEach(el=>el.addEventListener('click', ()=>{ const [category, id, dir] = el.dataset.moveItem.split('|'); moveItemInCategory(category, id, parseInt(dir,10)); render(); }));
+  document.getElementById('add-step-detail-btn')?.addEventListener('click', ()=>{ const inp = document.getElementById('detail-step-input'); if(inp.value.trim()){ addStep(view.id, inp.value); render(); } });
+  document.getElementById('detail-step-input')?.addEventListener('keydown', e=>{ if(e.key==='Enter'){ addStep(view.id, e.target.value); render(); } });
+  document.getElementById('mark-complete-btn')?.addEventListener('click', ()=>{ completeItem(view.id); view={page:'landing'}; render(); });
+  document.getElementById('edit-item-btn')?.addEventListener('click', ()=>{ const it = getItem(view.id); view = {page:'add', itemType: it.type, itemWorkspace: it.workspace, editId: view.id}; render(); });
+  document.getElementById('delete-item-btn')?.addEventListener('click', ()=>{ if(confirm('Delete this permanently?')){ deleteItem(view.id); view={page:'landing'}; render(); } });
+  document.getElementById('park-btn')?.addEventListener('click', ()=>{
+    const reason = prompt('Why is this parked / waiting?'); if(reason===null) return;
+    const rdate = prompt('Review date (YYYY-MM-DD)?', todayISO()); if(rdate===null) return;
+    parkItem(view.id, reason, rdate); render();
+  });
+  document.getElementById('unpark-btn')?.addEventListener('click', ()=>{ unparkItem(view.id); render(); });
+  document.querySelectorAll('[data-complete-capture]').forEach(el=>el.addEventListener('click', ()=>{ completeQuickCapture(el.dataset.completeCapture); render(); }));
+  document.querySelectorAll('[data-convert-capture]').forEach(el=>el.addEventListener('click', ()=>{
+    const qc = data.quickCaptures.find(q=>q.id===el.dataset.convertCapture); qc.resolved = true; saveData();
+    view = {page:'add', itemType:'task', itemWorkspace: qc.workspace, prefill:{name: qc.text, urgent: qc.urgent}}; render();
+  }));
+}
+
+function renderDetailOverlay(id){
+  const it = getItem(id);
+  if(!it) return `<div class="overlay-backdrop"><div class="overlay-card">Not found. <button class="btn-secondary" id="go-home">Home</button></div></div>`;
+  const prog = progress(it); const colorKey = it.type==='task'?'tasks':it.type==='project'?'projects':'recurring';
+  let stepsHtml = it.steps && it.steps.length ? it.steps.map((s,idx)=>`
+      <div class="step-row">
+        <button class="row-check ${s.done?'checked':''}" data-toggle-done="${it.id}|${s.id}"></button>
+        <div class="step-text ${s.done?'done':''}">${escapeHtml(s.text)}</div>
+        <div class="step-flags">
+          <button class="flag-btn today ${s.today?'active':''}" data-toggle-today="${it.id}|${s.id}">Today</button>
+          <button class="flag-btn quickwin ${s.quickwin?'active':''}" data-toggle-qw="${it.id}|${s.id}">Quick Win</button>
+          <button class="flag-btn" data-move-step="${it.id}|${s.id}|-1" ${idx===0?'disabled style="opacity:.3;"':''}>↑</button>
+          <button class="flag-btn" data-move-step="${it.id}|${s.id}|1" ${idx===it.steps.length-1?'disabled style="opacity:.3;"':''}>↓</button>
+        </div>
+      </div>`).join('') : `<div class="empty">No steps — this item can be selected directly for Today or Quick Wins below.</div>`;
+  const itemLevelFlags = (!it.steps || it.steps.length===0) ? `<div class="detail-actions">
+      <button class="detail-btn primary ${it.today?'active':''}" data-toggle-today="${it.id}|">${it.today?'✓ In Today':'Add to Today'}</button>
+      <button class="detail-btn ${it.quickwin?'active':''}" data-toggle-qw="${it.id}|">${it.quickwin?'✓ Quick Win':'Mark Quick Win'}</button>
+    </div>` : '';
+  const parkedBox = it.parked ? `<div class="park-box"><b>Parked / Waiting</b> — ${escapeHtml(it.parkReason||'')}<br/>Review ${fmtDate(it.parkReviewDate)||'—'} ${it.dueDate?` · Due ${fmtDate(it.dueDate)}`:''}</div>` : '';
+  return `<div class="overlay-backdrop" id="backdrop"><div class="overlay-card">
+    <div class="overlay-top">
+      <div><span class="tag" style="background:var(--${colorKey}-bg); color:var(--${colorKey}); text-transform:capitalize;">${it.type}</span>
+        <span class="tag" style="background:var(--surface3); color:var(--text-faint);">${it.workspace==='personal'?'🏠 Personal':'💼 Work'}</span>
+        <div class="overlay-title" style="margin-top:8px;">${escapeHtml(it.name)}</div></div>
+      <button class="overlay-close" id="close-overlay">✕</button>
+    </div>
+    <div class="detail-meta-row">
+      ${prioTag(it.priority)}
+      ${it.urgent?`<span class="tag urgent">Urgent</span>`:''}
+      ${isOverdue(it)?`<span class="tag overdue">Overdue ${fmtDate(it.dueDate)}</span>`: it.dueDate?`<span class="tag due">Due ${fmtDate(it.dueDate)}</span>`:''}
+      ${it.reviewDate?`<span class="tag review">Review ${fmtDate(it.reviewDate)}</span>`:''}
+      ${it.recurrence?`<span class="tag" style="background:var(--surface3); color:var(--text-faint);">${it.recurrence.freq}</span>`:''}
+    </div>
+    ${prog ? `<div class="progress-mini" style="margin-bottom:10px;">
+      <div class="progress-track" style="max-width:220px;"><div class="progress-fill" style="width:${prog.pct}%; background:var(--${colorKey})"></div></div>
+      <div class="progress-label">${prog.done} of ${prog.total} complete · ${prog.pct}%</div></div>` : ''}
+    ${it.notes ? `<div style="font-size:13px; color:var(--text-dim); margin-bottom:6px;">${escapeHtml(it.notes)}</div>` : ''}
+    ${parkedBox}
+    <label class="field-label" style="margin-top:16px;">Steps</label>
+    <div class="step-list">${stepsHtml}</div>
+    <div class="step-add-row"><input type="text" id="detail-step-input" placeholder="Add a step…" /><button class="btn-secondary" id="add-step-detail-btn" style="padding:10px 16px;">Add</button></div>
+    ${itemLevelFlags}
+    <div class="detail-actions">
+      ${!it.completed ? `<button class="detail-btn done" id="mark-complete-btn">Mark complete</button>`:''}
+      <button class="detail-btn" id="edit-item-btn">Edit</button>
+      ${it.parked ? `<button class="detail-btn" id="unpark-btn">Resume (unpark)</button>` : `<button class="detail-btn" id="park-btn">Park / Waiting</button>`}
+      <button class="detail-btn btn-danger" id="delete-item-btn">Delete</button>
+    </div>
+  </div></div>`;
+}
+
+function renderListOverlay(category){
+  let title, list, colorKey, reorderable = false;
+  if(category==='tasks'){ title='All Tasks'; list=getCategoryItems('tasks'); colorKey='tasks'; reorderable=true; }
+  else if(category==='projects'){ title='All Projects'; list=getCategoryItems('projects'); colorKey='projects'; reorderable=true; }
+  else if(category==='parked'){ title='Parked / Waiting'; list=getCategoryItems('parked'); colorKey='parked'; reorderable=true; }
+  else if(category==='recurring'){ title='Recurring Tasks'; list=getCategoryItems('recurring'); colorKey='recurring'; reorderable=true; }
+  else if(category==='urgent'){ title='Urgent / Overdue'; list=data.items.filter(i=>!i.completed && isUrgentOrOverdue(i) && i.workspace===data.currentWorkspace); colorKey='urgent'; }
+  else if(category==='captures'){
+    title='Quick Capture';
+    const rows = data.quickCaptures.filter(q=>!q.resolved && q.workspace===data.currentWorkspace).map(qc=>`
+      <div class="qc-item ${qc.urgent?'urgent':''}"><div class="qc-text">${escapeHtml(qc.text)}</div>
+        <div class="qc-actions"><button class="qc-btn convert" data-convert-capture="${qc.id}">Convert</button><button class="qc-btn" data-complete-capture="${qc.id}">Done</button></div>
+      </div>`).join('') || `<div class="empty">Inbox empty.</div>`;
+    return listShell(title, rows);
+  }
+  const full = reorderable ? orderedList(category, list) : sortPreview(list||[]);
+  const rows = full.length ? full.map((it,idx)=>itemRow(it,colorKey, reorderable ? {reorder:true, category, idx, total:full.length} : {})).join('') : `<div class="empty">Nothing here.</div>`;
+  return listShell(title, rows);
+}
+function listShell(title, rowsHtml){
+  return `<div class="overlay-backdrop" id="backdrop"><div class="overlay-card">
+    <div class="overlay-top"><div class="overlay-title">${title}</div><button class="overlay-close" id="close-overlay">✕</button></div>
+    ${rowsHtml}
+  </div></div>`;
+}
+
+document.addEventListener('click', (e)=>{
+  const exp = e.target.closest('[data-toggle-expand]');
+  if(exp){ e.stopPropagation(); }
+});
+
+boot();
+</script>
+</body>
+</html>
