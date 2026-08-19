@@ -378,6 +378,11 @@ function addStep(itemId, text){
   it.steps.push({ id: itemId+'-S'+stepNum, text: text.trim(), done:false, today:false, quickwin:false });
   saveData();
 }
+function deleteStep(itemId, stepId){
+  const it = getItem(itemId); if(!it) return;
+  it.steps = it.steps.filter(s=>s.id!==stepId);
+  saveData();
+}
 function toggleStepDone(itemId, stepId){
   const it = getItem(itemId); const step = it.steps.find(s=>s.id===stepId);
   step.done = !step.done;
@@ -534,7 +539,7 @@ function renderLanding(){
     <button class="pill c-tasks" data-list="tasks"><b>${tasks.length}</b> Tasks</button>
     <button class="pill c-projects" data-list="projects"><b>${projects.length}</b> Projects</button>
     <button class="pill c-recurring" data-list="recurring"><b>${recurring.length}</b> Recurring</button>
-    <button class="pill c-wins"><b>${dailyWins.length}</b> Wins Today</button>
+    <button class="pill c-wins" data-list="history"><b>${dailyWins.length}</b> Wins Today</button>
   </div>
 
   <div class="landing-grid">
@@ -568,6 +573,7 @@ function nestedSteps(item){
         <button class="mini-flag quickwin ${s.quickwin?'active':''}" data-toggle-qw="${item.id}|${s.id}">QW</button>
         <button class="mini-flag" data-move-step="${item.id}|${s.id}|-1" ${idx===0?'disabled style="opacity:.3;"':''}>↑</button>
         <button class="mini-flag" data-move-step="${item.id}|${s.id}|1" ${idx===item.steps.length-1?'disabled style="opacity:.3;"':''}>↓</button>
+        <button class="mini-flag" style="color:var(--urgent);" data-delete-step="${item.id}|${s.id}">✕</button>
       </div>`).join('')}
     <div class="step-add-inline">
       <input type="text" placeholder="Add a step…" data-inline-step-input="${item.id}" />
@@ -715,6 +721,10 @@ function attachLandingEvents(){
   }));
   document.querySelectorAll('[data-toggle-done]').forEach(el=>el.addEventListener('click', (e)=>{
     e.stopPropagation(); const [itemId, stepId] = el.dataset.toggleDone.split('|'); toggleStepDone(itemId, stepId); render();
+  }));
+  document.querySelectorAll('[data-delete-step]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); const [itemId, stepId] = el.dataset.deleteStep.split('|');
+    if(confirm('Delete this step?')){ deleteStep(itemId, stepId); render(); }
   }));
   document.querySelectorAll('[data-toggle-today]').forEach(el=>el.addEventListener('click', (e)=>{
     e.stopPropagation(); const [itemId, stepId] = el.dataset.toggleToday.split('|'); toggleToday(itemId, stepId||null); render();
@@ -870,6 +880,7 @@ function attachOverlayEvents(){
   document.querySelectorAll('[data-toggle-today]').forEach(el=>el.addEventListener('click', ()=>{ const [itemId, stepId] = el.dataset.toggleToday.split('|'); toggleToday(itemId, stepId||null); render(); }));
   document.querySelectorAll('[data-toggle-qw]').forEach(el=>el.addEventListener('click', ()=>{ const [itemId, stepId] = el.dataset.toggleQw.split('|'); toggleQuickWin(itemId, stepId||null); render(); }));
   document.querySelectorAll('[data-toggle-done]').forEach(el=>el.addEventListener('click', ()=>{ const [itemId, stepId] = el.dataset.toggleDone.split('|'); toggleStepDone(itemId, stepId); render(); }));
+  document.querySelectorAll('[data-delete-step]').forEach(el=>el.addEventListener('click', ()=>{ const [itemId, stepId] = el.dataset.deleteStep.split('|'); if(confirm('Delete this step?')){ deleteStep(itemId, stepId); render(); } }));
   document.querySelectorAll('[data-move-step]').forEach(el=>el.addEventListener('click', ()=>{ const [itemId, stepId, dir] = el.dataset.moveStep.split('|'); moveStep(itemId, stepId, parseInt(dir,10)); render(); }));
   document.querySelectorAll('[data-move-item]').forEach(el=>el.addEventListener('click', ()=>{ const [category, id, dir] = el.dataset.moveItem.split('|'); moveItemInCategory(category, id, parseInt(dir,10)); render(); }));
   document.getElementById('add-step-detail-btn')?.addEventListener('click', ()=>{ const inp = document.getElementById('detail-step-input'); if(inp.value.trim()){ addStep(view.id, inp.value); render(); } });
@@ -903,6 +914,7 @@ function renderDetailOverlay(id){
           <button class="flag-btn quickwin ${s.quickwin?'active':''}" data-toggle-qw="${it.id}|${s.id}">Quick Win</button>
           <button class="flag-btn" data-move-step="${it.id}|${s.id}|-1" ${idx===0?'disabled style="opacity:.3;"':''}>↑</button>
           <button class="flag-btn" data-move-step="${it.id}|${s.id}|1" ${idx===it.steps.length-1?'disabled style="opacity:.3;"':''}>↓</button>
+          <button class="flag-btn btn-danger" data-delete-step="${it.id}|${s.id}">✕</button>
         </div>
       </div>`).join('') : `<div class="empty">No steps — this item can be selected directly for Today or Quick Wins below.</div>`;
   const itemLevelFlags = (!it.steps || it.steps.length===0) ? `<div class="detail-actions">
@@ -949,6 +961,17 @@ function renderListOverlay(category){
   else if(category==='parked'){ title='Parked / Waiting'; list=getCategoryItems('parked'); colorKey='parked'; reorderable=true; }
   else if(category==='recurring'){ title='Recurring Tasks'; list=getCategoryItems('recurring'); colorKey='recurring'; reorderable=true; }
   else if(category==='urgent'){ title='Urgent / Overdue'; list=data.items.filter(i=>!i.completed && isUrgentOrOverdue(i) && i.workspace===data.currentWorkspace); colorKey='urgent'; }
+  else if(category==='history'){
+    title='Completed History';
+    const entries = data.history.filter(h=>h.workspace===data.currentWorkspace).slice().sort((a,b)=> a.date<b.date?1:a.date>b.date?-1:0);
+    const rows = entries.length ? entries.map(h=>`
+      <div class="win-row"><span class="dot">✦</span>
+        <div><div>${escapeHtml(h.text)}</div>
+        ${h.parentName?`<div class="win-parent">${escapeHtml(h.parentName)}</div>`:''}
+        <div class="win-parent">Completed ${fmtDate(h.date)}</div></div>
+      </div>`).join('') : `<div class="empty">Nothing completed yet.</div>`;
+    return listShell(title, rows);
+  }
   else if(category==='captures'){
     title='Quick Capture';
     const rows = data.quickCaptures.filter(q=>!q.resolved && q.workspace===data.currentWorkspace).map(qc=>`
