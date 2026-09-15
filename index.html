@@ -207,6 +207,8 @@ let data = { items: [], quickCaptures: [], history: [], order: {}, currentWorksp
 let view = { page: 'landing' };
 let loaded = false;
 let currentUser = null;
+let editingStep = null;    // {itemId, stepId} or {itemId, stepId, subId} — which step/sub-step is mid-edit
+let editingCapture = null; // id of a quick capture currently mid-edit
 
 const SUPABASE_URL = 'https://auuqwckkrhkatfgfgxtf.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_t_Mxh8PZMVo7Kr6rtygkwQ_KF3YB_Bk';
@@ -344,7 +346,9 @@ function showToast(msg){
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function fmtDate(d){ if(!d) return ''; const dt = new Date(d+'T00:00:00'); return dt.toLocaleDateString('en-GB',{day:'numeric',month:'short'}); }
 function isOverdue(item){ if(item.parked) return false; if(item.dueDate && item.dueDate < todayISO()) return true; return false; }
-function isUrgentOrOverdue(item){ return !item.completed && (item.urgent || isOverdue(item)); }
+function stepIsOverdue(step){ return !!step && !step.done && !!step.dueDate && step.dueDate < todayISO(); }
+function overdueSteps(item){ return (item.steps||[]).filter(stepIsOverdue); }
+function isUrgentOrOverdue(item){ return !item.completed && (item.urgent || isOverdue(item) || (!item.parked && overdueSteps(item).length>0)); }
 function genId(type){ return type + '-' + (crypto.randomUUID?crypto.randomUUID().slice(0,8):Math.random().toString(36).slice(2,10)); }
 function uid(){ return Math.random().toString(36).slice(2,9); }
 function getItem(id){ return data.items.find(i=>i.id===id); }
@@ -354,10 +358,12 @@ function progress(item){
   return {done, total, pct: Math.round(done/total*100)};
 }
 function todayCount(){
-  let c=0; data.items.forEach(it=>{ if(it.workspace!==data.currentWorkspace) return; if(it.today) c++; if(it.steps) it.steps.forEach(s=>{ if(s.today && !s.done) c++; }); }); return c;
+  let c=0; data.items.forEach(it=>{ if(it.workspace!==data.currentWorkspace) return; if(it.today) c++;
+    if(it.steps) it.steps.forEach(s=>{ if(s.today && !s.done) c++; if(s.subSteps) s.subSteps.forEach(sub=>{ if(sub.today && !sub.done) c++; }); }); }); return c;
 }
 function quickWinCount(){
-  let c=0; data.items.forEach(it=>{ if(it.workspace!==data.currentWorkspace) return; if(it.quickwin) c++; if(it.steps) it.steps.forEach(s=>{ if(s.quickwin && !s.done) c++; }); }); return c;
+  let c=0; data.items.forEach(it=>{ if(it.workspace!==data.currentWorkspace) return; if(it.quickwin) c++;
+    if(it.steps) it.steps.forEach(s=>{ if(s.quickwin && !s.done) c++; if(s.subSteps) s.subSteps.forEach(sub=>{ if(sub.quickwin && !sub.done) c++; }); }); }); return c;
 }
 function weekRange(){
   const now = new Date(); const day = (now.getDay()+6)%7;
@@ -384,8 +390,58 @@ function deleteItem(id){ data.items = data.items.filter(i=>i.id!==id); sb.from('
 function newStepId(itemId){ return itemId+'-S'+(crypto.randomUUID?crypto.randomUUID().slice(0,8):Math.random().toString(36).slice(2,10)); }
 function addStep(itemId, text){
   const it = getItem(itemId); if(!it || !text.trim()) return;
-  it.steps.push({ id: newStepId(itemId), text: text.trim(), done:false, today:false, quickwin:false });
+  it.steps.push({ id: newStepId(itemId), text: text.trim(), done:false, today:false, quickwin:false, dueDate:'', reviewDate:'', subSteps: [] });
   saveData();
+}
+function updateStepText(itemId, stepId, text){
+  const it = getItem(itemId); if(!it) return; const step = it.steps.find(s=>s.id===stepId);
+  if(!step || !text.trim()) return; step.text = text.trim(); saveData();
+}
+function updateStepDates(itemId, stepId, dueDate, reviewDate){
+  const it = getItem(itemId); if(!it) return; const step = it.steps.find(s=>s.id===stepId);
+  if(!step) return; step.dueDate = dueDate||''; step.reviewDate = reviewDate||''; saveData();
+}
+function getStepOnly(itemId, stepId){ const it = getItem(itemId); return it ? it.steps.find(s=>s.id===stepId) : null; }
+function getSubStep(itemId, stepId, subId){
+  const step = getStepOnly(itemId, stepId); if(!step || !step.subSteps) return null;
+  return step.subSteps.find(s=>s.id===subId) || null;
+}
+function addSubStep(itemId, stepId, text){
+  const step = getStepOnly(itemId, stepId); if(!step || !text.trim()) return;
+  if(!step.subSteps) step.subSteps = [];
+  step.subSteps.push({ id: newStepId(itemId), text: text.trim(), done:false, today:false, quickwin:false });
+  saveData();
+}
+function updateSubStepText(itemId, stepId, subId, text){
+  const sub = getSubStep(itemId, stepId, subId); if(!sub || !text.trim()) return; sub.text = text.trim(); saveData();
+}
+function deleteSubStep(itemId, stepId, subId){
+  const step = getStepOnly(itemId, stepId); if(!step || !step.subSteps) return;
+  step.subSteps = step.subSteps.filter(s=>s.id!==subId);
+  if(editingStep && editingStep.itemId===itemId && editingStep.stepId===stepId && editingStep.subId===subId) editingStep = null;
+  saveData();
+}
+function toggleSubStepDone(itemId, stepId, subId){
+  const it = getItem(itemId); const sub = getSubStep(itemId, stepId, subId); if(!sub) return;
+  sub.done = !sub.done;
+  if(sub.done){ sub.today=false; sub.quickwin=false; addToHistory({type:'step', text: sub.text, parentName: it.name, workspace: it.workspace, itemId: it.id}); }
+  saveData();
+}
+function moveSubStep(itemId, stepId, subId, dir){
+  const step = getStepOnly(itemId, stepId); if(!step || !step.subSteps) return;
+  const idx = step.subSteps.findIndex(s=>s.id===subId); const newIdx = idx+dir;
+  if(idx<0 || newIdx<0 || newIdx>=step.subSteps.length) return;
+  const tmp = step.subSteps[idx]; step.subSteps[idx]=step.subSteps[newIdx]; step.subSteps[newIdx]=tmp; saveData();
+}
+function toggleSubToday(itemId, stepId, subId){
+  const MAX=5; const sub = getSubStep(itemId, stepId, subId); if(!sub) return;
+  if(!sub.today && todayCount() >= MAX){ showToast("Today's Focus is full (5)"); return; }
+  sub.today = !sub.today; if(sub.today) sub.quickwin=false; saveData();
+}
+function toggleSubQuickWin(itemId, stepId, subId){
+  const MAX=5; const sub = getSubStep(itemId, stepId, subId); if(!sub) return;
+  if(!sub.quickwin && quickWinCount() >= MAX){ showToast('Quick Wins is full (5)'); return; }
+  sub.quickwin = !sub.quickwin; if(sub.quickwin) sub.today=false; saveData();
 }
 /* one-time repair: earlier builds generated step ids from the step count at the time
    (e.g. "-S03"), so deleting a step and later adding a new one could hand out a
@@ -406,6 +462,7 @@ function repairDuplicateStepIds(){
 function deleteStep(itemId, stepId){
   const it = getItem(itemId); if(!it) return;
   it.steps = it.steps.filter(s=>s.id!==stepId);
+  if(editingStep && editingStep.itemId===itemId && editingStep.stepId===stepId) editingStep = null;
   saveData();
 }
 function toggleStepDone(itemId, stepId){
@@ -450,10 +507,43 @@ function parkItem(id, reason, reviewDate){ updateItem(id, {parked:true, parkReas
 function unparkItem(id){ updateItem(id, {parked:false, parkReason:'', parkReviewDate:''}); }
 function addQuickCapture(text, urgent){
   if(!text.trim()) return;
-  data.quickCaptures.unshift({ id: uid(), text: text.trim(), urgent: !!urgent, createdDate: todayISO(), resolved:false, workspace: data.currentWorkspace });
+  const qc = { id: uid(), text: text.trim(), urgent: !!urgent, createdDate: todayISO(), resolved:false, workspace: data.currentWorkspace };
+  data.quickCaptures.unshift(qc);
+  if(!data.order) data.order={}; if(!data.order.captures) data.order.captures=[];
+  data.order.captures.unshift(qc.id);
   saveData();
 }
 function completeQuickCapture(id){ const qc = data.quickCaptures.find(q=>q.id===id); qc.resolved = true; addToHistory({type:'capture', text: qc.text, parentName:null, workspace: qc.workspace}); saveData(); }
+function deleteQuickCapture(id){
+  data.quickCaptures = data.quickCaptures.filter(q=>q.id!==id);
+  sb.from('quick_captures').delete().eq('id', id).then(()=>{});
+  if(editingCapture===id) editingCapture = null;
+  saveData();
+}
+function updateQuickCaptureText(id, text){
+  const qc = data.quickCaptures.find(q=>q.id===id); if(!qc || !text.trim()) return; qc.text = text.trim(); saveData();
+}
+function orderedCaptures(list){
+  if(!data.order) data.order = {}; if(!data.order.captures) data.order.captures = [];
+  const ids = list.map(q=>q.id);
+  ids.forEach(id=>{ if(!data.order.captures.includes(id)) data.order.captures.push(id); });
+  const orderIds = data.order.captures.filter(id=>ids.includes(id));
+  return orderIds.map(id=>list.find(q=>q.id===id));
+}
+function moveQuickCapture(id, dir){
+  const list = data.quickCaptures.filter(q=>!q.resolved && q.workspace===data.currentWorkspace);
+  const visibleIds = orderedCaptures(list).map(q=>q.id);
+  const idx = visibleIds.indexOf(id); const newIdx = idx+dir;
+  if(idx<0 || newIdx<0 || newIdx>=visibleIds.length) return;
+  const tmp = visibleIds[idx]; visibleIds[idx]=visibleIds[newIdx]; visibleIds[newIdx]=tmp;
+  reorderQuickCapturesTo(visibleIds);
+}
+function reorderQuickCapturesTo(orderedVisibleIds){
+  if(!data.order) data.order={}; if(!data.order.captures) data.order.captures=[];
+  const rest = data.order.captures.filter(id=>!orderedVisibleIds.includes(id));
+  data.order.captures = orderedVisibleIds.concat(rest);
+  saveData();
+}
 function moveStep(itemId, stepId, dir){
   const it = getItem(itemId); if(!it) return;
   const idx = it.steps.findIndex(s=>s.id===stepId);
@@ -510,6 +600,49 @@ function initStepDrag(container, itemId){
 function initAllStepDrag(){
   document.querySelectorAll('[data-drag-container]').forEach(el=> initStepDrag(el, el.dataset.dragContainer));
 }
+function initGenericDrag(container, handleAttr, rowAttr, onDrop){
+  if(!container) return;
+  container.querySelectorAll(`[${handleAttr}]`).forEach(handle=>{
+    handle.addEventListener('pointerdown', (e)=>{
+      e.preventDefault();
+      const dragEl = handle.closest(`[${rowAttr}]`);
+      if(!dragEl) return;
+      dragEl.classList.add('dragging');
+      const onMove = (ev)=>{
+        const y = ev.clientY;
+        const siblings = Array.from(container.querySelectorAll(`[${rowAttr}]`)).filter(r=>r!==dragEl);
+        let target = null;
+        for(const sib of siblings){
+          const rect = sib.getBoundingClientRect();
+          if(y < rect.top + rect.height/2){ target = sib; break; }
+        }
+        if(target){ container.insertBefore(dragEl, target); } else { container.appendChild(dragEl); }
+      };
+      const finish = ()=>{
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', finish);
+        document.removeEventListener('pointercancel', finish);
+        dragEl.classList.remove('dragging');
+        const newOrder = Array.from(container.querySelectorAll(`[${rowAttr}]`)).map(r=>r.getAttribute(rowAttr));
+        onDrop(newOrder);
+      };
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', finish);
+      document.addEventListener('pointercancel', finish);
+    });
+  });
+}
+function initAllItemDrag(){
+  document.querySelectorAll('[data-item-drag-container]').forEach(el=>{
+    const category = el.dataset.itemDragContainer;
+    initGenericDrag(el, 'data-item-drag-handle', 'data-item-row-id', (newOrder)=>{ reorderItemsInCategory(category, newOrder); render(); });
+  });
+}
+function initAllCaptureDrag(){
+  document.querySelectorAll('[data-capture-drag-container]').forEach(el=>{
+    initGenericDrag(el, 'data-capture-drag-handle', 'data-capture-row-id', (newOrder)=>{ reorderQuickCapturesTo(newOrder); render(); });
+  });
+}
 
 /* ---------- manual item ordering (Tasks/Projects/Recurring/Parked) ---------- */
 function getCategoryItems(category){
@@ -538,13 +671,23 @@ function moveItemInCategory(category, id, dir){
   data.order[category] = visibleIds;
   saveData();
 }
+function reorderItemsInCategory(category, orderedVisibleIds){
+  if(!data.order) data.order = {}; if(!data.order[category]) data.order[category] = [];
+  const rest = data.order[category].filter(id=>!orderedVisibleIds.includes(id));
+  data.order[category] = orderedVisibleIds.concat(rest);
+  saveData();
+}
 
+function earliestOverdueStepDate(item){
+  const os = overdueSteps(item); if(!os.length) return null;
+  return os.map(s=>s.dueDate).sort()[0];
+}
 function sortPreview(list){
   return [...list].sort((a,b)=>{
     const ao = isUrgentOrOverdue(a) ? 0 : 1, bo = isUrgentOrOverdue(b) ? 0 : 1;
     if(ao!==bo) return ao-bo;
-    const ad = a.dueDate || a.reviewDate || a.parkReviewDate || '9999';
-    const bd = b.dueDate || b.reviewDate || b.parkReviewDate || '9999';
+    const ad = a.dueDate || earliestOverdueStepDate(a) || a.reviewDate || a.parkReviewDate || '9999';
+    const bd = b.dueDate || earliestOverdueStepDate(b) || b.reviewDate || b.parkReviewDate || '9999';
     if(ad!==bd) return ad<bd? -1:1;
     const ap = progress(a)?.pct ?? -1, bp = progress(b)?.pct ?? -1;
     if(ap!==bp) return bp-ap;
@@ -553,6 +696,10 @@ function sortPreview(list){
 }
 function escapeHtml(s){ const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
 function prioTag(p){ if(!p) return ''; return `<span class="tag prio-${p.toLowerCase()}">${p}</span>`; }
+
+/* ---------- navigation (every page remembers what it was opened from) ---------- */
+function goTo(newView){ newView.returnTo = view; view = newView; editingStep = null; editingCapture = null; render(); }
+function goBack(){ view = view.returnTo || {page:'landing'}; editingStep = null; editingCapture = null; render(); }
 
 /* ---------- render ---------- */
 function render(){
@@ -633,20 +780,77 @@ function renderLanding(){
   `;
 }
 
+function stepMetaTags(s){
+  let t = '';
+  if(s.dueDate){ const od = stepIsOverdue(s); t += `<span class="tag ${od?'overdue':'due'}">${od?'Overdue':'Due'} ${fmtDate(s.dueDate)}</span>`; }
+  if(s.reviewDate) t += `<span class="tag review">Review ${fmtDate(s.reviewDate)}</span>`;
+  return t;
+}
+function subStepsToggle(step){
+  const subs = step.subSteps || [];
+  const subExpanded = !!data.expanded[step.id];
+  const countLabel = subs.length ? ` ${subs.filter(x=>x.done).length}/${subs.length}` : '';
+  return `<button class="mini-flag" data-toggle-expand="${step.id}" title="Steps for this step">${subExpanded?'▾':'▸'} sub${countLabel}</button>`;
+}
+function subStepRow(itemId, stepId, sub, idx, total){
+  if(editingStep && editingStep.itemId===itemId && editingStep.stepId===stepId && editingStep.subId===sub.id){
+    return `<div class="step-add-inline">
+      <input type="text" data-substep-edit-text="${itemId}|${stepId}|${sub.id}" value="${escapeHtml(sub.text)}" style="flex:1;" />
+      <button data-substep-edit-save="${itemId}|${stepId}|${sub.id}">Save</button>
+      <button data-substep-edit-cancel="${itemId}|${stepId}|${sub.id}">Cancel</button>
+    </div>`;
+  }
+  return `<div class="step-nested-row" data-substep-id="${sub.id}">
+      <button class="row-check ${sub.done?'checked':''}" style="width:14px;height:14px;" data-toggle-done-sub="${itemId}|${stepId}|${sub.id}"></button>
+      <div class="step-nested-text ${sub.done?'done':''}" style="cursor:pointer;" data-edit-sub-open="${itemId}|${stepId}|${sub.id}" title="Click to edit">${escapeHtml(sub.text)}</div>
+      <button class="mini-flag today ${sub.today?'active':''}" data-toggle-today-sub="${itemId}|${stepId}|${sub.id}">Today</button>
+      <button class="mini-flag quickwin ${sub.quickwin?'active':''}" data-toggle-qw-sub="${itemId}|${stepId}|${sub.id}">QW</button>
+      <button class="mini-flag" data-move-sub="${itemId}|${stepId}|${sub.id}|-1" ${idx===0?'disabled style="opacity:.3;"':''}>↑</button>
+      <button class="mini-flag" data-move-sub="${itemId}|${stepId}|${sub.id}|1" ${idx===total-1?'disabled style="opacity:.3;"':''}>↓</button>
+      <button class="mini-flag" style="color:var(--urgent);" data-delete-sub="${itemId}|${stepId}|${sub.id}">✕</button>
+    </div>`;
+}
+function subStepsPanel(itemId, step){
+  if(!data.expanded[step.id]) return '';
+  const subs = step.subSteps || [];
+  return `<div class="steps-nested" style="margin-left:20px;">
+    ${subs.map((sub,idx)=>subStepRow(itemId, step.id, sub, idx, subs.length)).join('')}
+    <div class="step-add-inline">
+      <input type="text" placeholder="Add a step for this step…" data-inline-substep-input="${itemId}|${step.id}" />
+      <button data-inline-substep-add="${itemId}|${step.id}">Add</button>
+    </div>
+  </div>`;
+}
+function stepEditRow(itemId, s){
+  return `<div class="step-add-inline" style="flex-wrap:wrap;" data-step-id="${s.id}">
+      <input type="text" data-step-edit-text="${itemId}|${s.id}" value="${escapeHtml(s.text)}" style="flex:1 1 100%;" />
+      <input type="date" data-step-edit-due="${itemId}|${s.id}" value="${s.dueDate||''}" title="Due date" style="flex:1;" />
+      <input type="date" data-step-edit-review="${itemId}|${s.id}" value="${s.reviewDate||''}" title="Review date" style="flex:1;" />
+      <button data-step-edit-save="${itemId}|${s.id}">Save</button>
+      <button data-step-edit-cancel="${itemId}|${s.id}">Cancel</button>
+    </div>`;
+}
 function nestedSteps(item){
   if(!item.steps || item.steps.length===0) return '';
   return `<div class="steps-nested" data-drag-container="${item.id}">
-    ${item.steps.map((s,idx)=>`
+    ${item.steps.map((s,idx)=>{
+      if(editingStep && editingStep.itemId===item.id && editingStep.stepId===s.id && !editingStep.subId){
+        return stepEditRow(item.id, s);
+      }
+      return `
       <div class="step-nested-row" data-step-id="${s.id}">
         <span class="drag-handle" title="Drag to reorder">⠿</span>
         <button class="row-check ${s.done?'checked':''}" style="width:16px;height:16px;" data-toggle-done="${item.id}|${s.id}"></button>
-        <div class="step-nested-text ${s.done?'done':''}">${escapeHtml(s.text)}</div>
+        <div class="step-nested-text ${s.done?'done':''}" style="cursor:pointer;" data-edit-step-open="${item.id}|${s.id}" title="Click to edit">${escapeHtml(s.text)}</div>
+        ${stepMetaTags(s)}
         <button class="mini-flag today ${s.today?'active':''}" data-toggle-today="${item.id}|${s.id}">Today</button>
         <button class="mini-flag quickwin ${s.quickwin?'active':''}" data-toggle-qw="${item.id}|${s.id}">QW</button>
+        ${subStepsToggle(s)}
         <button class="mini-flag" data-move-step="${item.id}|${s.id}|-1" ${idx===0?'disabled style="opacity:.3;"':''}>↑</button>
         <button class="mini-flag" data-move-step="${item.id}|${s.id}|1" ${idx===item.steps.length-1?'disabled style="opacity:.3;"':''}>↓</button>
         <button class="mini-flag" style="color:var(--urgent);" data-delete-step="${item.id}|${s.id}">✕</button>
-      </div>`).join('')}
+      </div>` + subStepsPanel(item.id, s);
+    }).join('')}
     <div class="step-add-inline">
       <input type="text" placeholder="Add a step…" data-inline-step-input="${item.id}" />
       <button data-inline-step-add="${item.id}">Add</button>
@@ -658,6 +862,7 @@ function itemRow(item, colorKey, opts){
   opts = opts || {};
   const prog = progress(item);
   const overdue = isOverdue(item);
+  const stepsOverdueCount = overdueSteps(item).length;
   const hasSteps = item.steps && item.steps.length>0;
   const expanded = !!data.expanded[item.id];
   let tags = prioTag(item.priority);
@@ -665,11 +870,13 @@ function itemRow(item, colorKey, opts){
   if(overdue) tags += `<span class="tag overdue">Overdue ${fmtDate(item.dueDate)}</span>`;
   else if(item.dueDate) tags += `<span class="tag due">Due ${fmtDate(item.dueDate)}</span>`;
   if(item.reviewDate) tags += `<span class="tag review">Review ${fmtDate(item.reviewDate)}</span>`;
+  if(!overdue && stepsOverdueCount>0) tags += `<span class="tag overdue">${stepsOverdueCount} step${stepsOverdueCount>1?'s':''} overdue</span>`;
   let progHtml = prog ? `<div class="progress-mini">
       <div class="progress-track"><div class="progress-fill" style="width:${prog.pct}%; background:var(--${colorKey})"></div></div>
       <div class="progress-label">${prog.done}/${prog.total} · ${prog.pct}%</div>
     </div>` : '';
   const reorderHtml = opts.reorder ? `<div class="item-reorder">
+      <span class="drag-handle" data-item-drag-handle title="Drag to reorder">⠿</span>
       <button class="mini-flag" data-move-item="${opts.category}|${item.id}|-1" ${opts.idx===0?'disabled style="opacity:.3;"':''}>↑</button>
       <button class="mini-flag" data-move-item="${opts.category}|${item.id}|1" ${opts.idx===opts.total-1?'disabled style="opacity:.3;"':''}>↓</button>
     </div>` : '';
@@ -677,7 +884,7 @@ function itemRow(item, colorKey, opts){
       <button class="mini-flag today ${item.today?'active':''}" data-toggle-today="${item.id}|" title="${item.today?'In Today':'Add to Today'}">${item.today?'★':'☆'}</button>
       <button class="mini-flag quickwin ${item.quickwin?'active':''}" data-toggle-qw="${item.id}|" title="${item.quickwin?'Quick Win':'Mark Quick Win'}">⚡</button>
     </div>`;
-  return `<div class="row">
+  return `<div class="row" data-item-row-id="${item.id}">
     <div class="row-main">
       ${hasSteps ? `<button class="expand-btn" data-toggle-expand="${item.id}">${expanded?'−':'+'}</button>` : `<span class="expand-spacer"></span>`}
       <div class="row-body" data-open="${item.id}">
@@ -723,10 +930,10 @@ function sectionUrgent(list){
 function sectionParked(list){
   const full = orderedList('parked', list);
   const shown = full.slice(0,5);
-  const body = shown.length ? shown.map(it=>{
+  const rowsHtml = shown.map(it=>{
     const idx = full.indexOf(it);
     return `
-    <div class="row"><div class="row-main">
+    <div class="row" data-item-row-id="${it.id}"><div class="row-main">
       <span class="expand-spacer"></span>
       <div class="row-body" data-open="${it.id}">
         <div class="row-title">${escapeHtml(it.name)}</div>
@@ -737,36 +944,54 @@ function sectionParked(list){
         <div style="font-size:11.5px; color:var(--text-faint); margin-top:3px;">${escapeHtml(it.parkReason||'')}</div>
       </div>
       <div class="item-reorder">
+        <span class="drag-handle" data-item-drag-handle title="Drag to reorder">⠿</span>
         <button class="mini-flag" data-move-item="parked|${it.id}|-1" ${idx===0?'disabled style="opacity:.3;"':''}>↑</button>
         <button class="mini-flag" data-move-item="parked|${it.id}|1" ${idx===full.length-1?'disabled style="opacity:.3;"':''}>↓</button>
       </div>
     </div></div>`;
-  }).join('') : `<div class="empty">Nothing parked right now.</div>`;
+  }).join('');
+  const body = shown.length ? `<div data-item-drag-container="parked">${rowsHtml}</div>` : `<div class="empty">Nothing parked right now.</div>`;
   const foot = list.length ? `<button class="showall-inline" data-list="parked" style="display:block;margin-top:6px;font-size:11.5px;font-weight:700;color:var(--parked);">Show all Parked / Waiting ›</button>` : '';
   return section('Parked / Waiting','parked', '', `${list.length}`, body+foot);
 }
-function sectionQuickCapture(list){
-  const shown = list.slice(0,12);
-  const body = shown.length ? shown.map(qc=>`
-    <div class="qc-item ${qc.urgent?'urgent':''}">
-      <div class="qc-text">${escapeHtml(qc.text)}</div>
+function quickCaptureRow(qc, idx, total){
+  if(editingCapture===qc.id){
+    return `<div class="qc-item">
+      <input type="text" class="qc-input" data-capture-edit-text="${qc.id}" value="${escapeHtml(qc.text)}" style="flex:1;" />
       <div class="qc-actions">
+        <button class="qc-btn" data-capture-edit-save="${qc.id}">Save</button>
+        <button class="qc-btn" data-capture-edit-cancel="${qc.id}">Cancel</button>
+      </div>
+    </div>`;
+  }
+  return `<div class="qc-item ${qc.urgent?'urgent':''}" data-capture-row-id="${qc.id}">
+      <span class="drag-handle" data-capture-drag-handle title="Drag to reorder">⠿</span>
+      <div class="qc-text" style="cursor:pointer;" data-edit-capture-open="${qc.id}" title="Click to edit">${escapeHtml(qc.text)}</div>
+      <div class="qc-actions">
+        <button class="qc-btn" data-move-capture="${qc.id}|-1" ${idx===0?'disabled style="opacity:.3;"':''}>↑</button>
+        <button class="qc-btn" data-move-capture="${qc.id}|1" ${idx===total-1?'disabled style="opacity:.3;"':''}>↓</button>
         <button class="qc-btn convert" data-convert-capture="${qc.id}">Convert</button>
         <button class="qc-btn" data-complete-capture="${qc.id}">Done</button>
+        <button class="qc-btn" style="color:var(--urgent);" data-delete-capture="${qc.id}">✕</button>
       </div>
-    </div>`).join('') : `<div class="empty">Inbox empty. Type below whenever something crosses your mind.</div>`;
+    </div>`;
+}
+function sectionQuickCapture(list){
+  const full = orderedCaptures(list);
+  const shown = full.slice(0,12);
+  const body = shown.length ? `<div data-capture-drag-container>${shown.map((qc,idx)=>quickCaptureRow(qc, idx, shown.length)).join('')}</div>` : `<div class="empty">Inbox empty. Type below whenever something crosses your mind.</div>`;
   const inputBlock = `<div class="qc-input-row">
       <input type="text" class="qc-input" id="qc-text-input" placeholder="Type a word or a sentence…" />
       <button class="qc-urgent-toggle" id="qc-urgent-toggle">!</button>
       <button class="qc-send" id="qc-send">Add</button>
     </div>`;
-  const foot = list.length>12 ? `<button class="showall-inline" data-list="captures" style="display:block;margin-top:6px;font-size:11.5px;font-weight:700;color:var(--capture);">Show all Quick Captures ›</button>` : '';
-  return section('Quick Capture','capture', '', `${list.length}`, inputBlock+body+foot);
+  const foot = full.length>12 ? `<button class="showall-inline" data-list="captures" style="display:block;margin-top:6px;font-size:11.5px;font-weight:700;color:var(--capture);">Show all Quick Captures ›</button>` : '';
+  return section('Quick Capture','capture', '', `${full.length}`, inputBlock+body+foot);
 }
 function sectionItemList(title, colorKey, list, category){
   const full = orderedList(category, list);
   const shown = full.slice(0,5);
-  const body = shown.length ? shown.map(it=>itemRow(it,colorKey,{reorder:true, category, idx:full.indexOf(it), total:full.length})).join('') : `<div class="empty">Nothing here yet.</div>`;
+  const body = shown.length ? `<div data-item-drag-container="${category}">${shown.map(it=>itemRow(it,colorKey,{reorder:true, category, idx:full.indexOf(it), total:full.length})).join('')}</div>` : `<div class="empty">Nothing here yet.</div>`;
   const foot = `<button class="showall-inline" data-list="${category}" style="display:block;margin-top:6px;font-size:11.5px;font-weight:700;color:var(--${colorKey});">Show all ${title} (${list.length}) ›</button>`;
   return section(title,colorKey, '', `${list.length}`, body+foot);
 }
@@ -789,9 +1014,10 @@ function section(title, colorKey, hintHtml, countText, bodyHtml){
   </div>`;
 }
 
-function attachLandingEvents(){
-  document.querySelectorAll('[data-open]').forEach(el=>el.addEventListener('click', ()=>{ view = {page:'detail', id: el.dataset.open}; render(); }));
-  document.querySelectorAll('[data-list]').forEach(el=>el.addEventListener('click', ()=>{ view = {page:'list', category: el.dataset.list}; render(); }));
+/* ---------- events shared by every page (landing, list, detail, add) ---------- */
+function attachCommonEvents(){
+  document.querySelectorAll('[data-open]').forEach(el=>el.addEventListener('click', ()=>{ goTo({page:'detail', id: el.dataset.open}); }));
+  document.querySelectorAll('[data-list]').forEach(el=>el.addEventListener('click', ()=>{ goTo({page:'list', category: el.dataset.list}); }));
   document.querySelectorAll('[data-scroll]').forEach(el=>el.addEventListener('click', ()=>{ document.getElementById(el.dataset.scroll)?.scrollIntoView({behavior:'smooth', block:'center'}); }));
   document.querySelectorAll('[data-toggle-expand]').forEach(el=>el.addEventListener('click', (e)=>{ e.stopPropagation(); toggleExpand(el.dataset.toggleExpand); }));
   document.querySelectorAll('[data-complete-step]').forEach(el=>el.addEventListener('click', (e)=>{
@@ -817,7 +1043,6 @@ function attachLandingEvents(){
   document.querySelectorAll('[data-move-item]').forEach(el=>el.addEventListener('click', (e)=>{
     e.stopPropagation(); const [category, id, dir] = el.dataset.moveItem.split('|'); moveItemInCategory(category, id, parseInt(dir,10)); render();
   }));
-  initAllStepDrag();
   document.querySelectorAll('[data-inline-step-add]').forEach(el=>el.addEventListener('click', (e)=>{
     e.stopPropagation(); const id = el.dataset.inlineStepAdd; const inp = document.querySelector(`[data-inline-step-input="${id}"]`);
     if(inp.value.trim()){ addStep(id, inp.value); render(); }
@@ -825,18 +1050,81 @@ function attachLandingEvents(){
   document.querySelectorAll('[data-inline-step-input]').forEach(el=>el.addEventListener('keydown', (e)=>{
     if(e.key==='Enter'){ e.stopPropagation(); const id = el.dataset.inlineStepInput; if(el.value.trim()){ addStep(id, el.value); render(); } }
   }));
+  document.querySelectorAll('[data-edit-step-open]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); const [itemId, stepId] = el.dataset.editStepOpen.split('|'); editingStep = {itemId, stepId}; render();
+  }));
+  document.querySelectorAll('[data-step-edit-save]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); const [itemId, stepId] = el.dataset.stepEditSave.split('|');
+    const textEl = document.querySelector(`[data-step-edit-text="${itemId}|${stepId}"]`);
+    const dueEl = document.querySelector(`[data-step-edit-due="${itemId}|${stepId}"]`);
+    const revEl = document.querySelector(`[data-step-edit-review="${itemId}|${stepId}"]`);
+    if(textEl && textEl.value.trim()){ updateStepText(itemId, stepId, textEl.value); updateStepDates(itemId, stepId, dueEl?dueEl.value:'', revEl?revEl.value:''); }
+    editingStep = null; render();
+  }));
+  document.querySelectorAll('[data-step-edit-cancel]').forEach(el=>el.addEventListener('click', (e)=>{ e.stopPropagation(); editingStep = null; render(); }));
+  document.querySelectorAll('[data-inline-substep-add]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); const [itemId, stepId] = el.dataset.inlineSubstepAdd.split('|');
+    const inp = document.querySelector(`[data-inline-substep-input="${itemId}|${stepId}"]`);
+    if(inp.value.trim()){ addSubStep(itemId, stepId, inp.value); render(); }
+  }));
+  document.querySelectorAll('[data-inline-substep-input]').forEach(el=>el.addEventListener('keydown', (e)=>{
+    if(e.key==='Enter'){ e.stopPropagation(); const [itemId, stepId] = el.dataset.inlineSubstepInput.split('|'); if(el.value.trim()){ addSubStep(itemId, stepId, el.value); render(); } }
+  }));
+  document.querySelectorAll('[data-toggle-done-sub]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); const [itemId, stepId, subId] = el.dataset.toggleDoneSub.split('|'); toggleSubStepDone(itemId, stepId, subId); render();
+  }));
+  document.querySelectorAll('[data-toggle-today-sub]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); const [itemId, stepId, subId] = el.dataset.toggleTodaySub.split('|'); toggleSubToday(itemId, stepId, subId); render();
+  }));
+  document.querySelectorAll('[data-toggle-qw-sub]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); const [itemId, stepId, subId] = el.dataset.toggleQwSub.split('|'); toggleSubQuickWin(itemId, stepId, subId); render();
+  }));
+  document.querySelectorAll('[data-move-sub]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); const [itemId, stepId, subId, dir] = el.dataset.moveSub.split('|'); moveSubStep(itemId, stepId, subId, parseInt(dir,10)); render();
+  }));
+  document.querySelectorAll('[data-delete-sub]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); const [itemId, stepId, subId] = el.dataset.deleteSub.split('|');
+    if(confirm('Delete this step?')){ deleteSubStep(itemId, stepId, subId); render(); }
+  }));
+  document.querySelectorAll('[data-edit-sub-open]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); const [itemId, stepId, subId] = el.dataset.editSubOpen.split('|'); editingStep = {itemId, stepId, subId}; render();
+  }));
+  document.querySelectorAll('[data-substep-edit-save]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); const [itemId, stepId, subId] = el.dataset.substepEditSave.split('|');
+    const textEl = document.querySelector(`[data-substep-edit-text="${itemId}|${stepId}|${subId}"]`);
+    if(textEl && textEl.value.trim()) updateSubStepText(itemId, stepId, subId, textEl.value);
+    editingStep = null; render();
+  }));
+  document.querySelectorAll('[data-substep-edit-cancel]').forEach(el=>el.addEventListener('click', (e)=>{ e.stopPropagation(); editingStep = null; render(); }));
+  initAllStepDrag();
+  initAllItemDrag();
+  initAllCaptureDrag();
   document.querySelectorAll('[data-complete-capture]').forEach(el=>el.addEventListener('click', ()=>{ completeQuickCapture(el.dataset.completeCapture); render(); }));
+  document.querySelectorAll('[data-delete-capture]').forEach(el=>el.addEventListener('click', ()=>{
+    if(confirm('Delete this quick capture?')){ deleteQuickCapture(el.dataset.deleteCapture); render(); }
+  }));
+  document.querySelectorAll('[data-move-capture]').forEach(el=>el.addEventListener('click', ()=>{ const [id, dir] = el.dataset.moveCapture.split('|'); moveQuickCapture(id, parseInt(dir,10)); render(); }));
+  document.querySelectorAll('[data-edit-capture-open]').forEach(el=>el.addEventListener('click', ()=>{ editingCapture = el.dataset.editCaptureOpen; render(); }));
+  document.querySelectorAll('[data-capture-edit-save]').forEach(el=>el.addEventListener('click', ()=>{
+    const id = el.dataset.captureEditSave; const textEl = document.querySelector(`[data-capture-edit-text="${id}"]`);
+    if(textEl && textEl.value.trim()) updateQuickCaptureText(id, textEl.value);
+    editingCapture = null; render();
+  }));
+  document.querySelectorAll('[data-capture-edit-cancel]').forEach(el=>el.addEventListener('click', ()=>{ editingCapture = null; render(); }));
   document.querySelectorAll('[data-convert-capture]').forEach(el=>el.addEventListener('click', ()=>{
     const qc = data.quickCaptures.find(q=>q.id===el.dataset.convertCapture); qc.resolved = true; saveData();
-    view = {page:'add', itemType:'task', itemWorkspace: qc.workspace, prefill:{name: qc.text, urgent: qc.urgent}}; render();
+    goTo({page:'add', itemType:'task', itemWorkspace: qc.workspace, prefill:{name: qc.text, urgent: qc.urgent}});
   }));
+}
+function attachLandingEvents(){
+  attachCommonEvents();
   const addBtn = document.getElementById('qc-send'), input = document.getElementById('qc-text-input'), urgentToggle = document.getElementById('qc-urgent-toggle');
   let urgentOn = false;
   if(urgentToggle) urgentToggle.addEventListener('click', ()=>{ urgentOn=!urgentOn; urgentToggle.classList.toggle('active', urgentOn); });
   function doAdd(){ if(!input.value.trim()) return; addQuickCapture(input.value, urgentOn); input.value=''; urgentOn=false; render(); }
   if(addBtn) addBtn.addEventListener('click', doAdd);
   if(input) input.addEventListener('keydown', e=>{ if(e.key==='Enter') doAdd(); });
-  document.querySelector('[data-action="open-add"]')?.addEventListener('click', ()=>{ view = {page:'add', itemType:null, itemWorkspace: data.currentWorkspace}; render(); });
+  document.querySelector('[data-action="open-add"]')?.addEventListener('click', ()=>{ goTo({page:'add', itemType:null, itemWorkspace: data.currentWorkspace}); });
   document.getElementById('refresh-btn')?.addEventListener('click', async ()=>{ await fetchAllData(); render(); showToast('Synced from server'); });
   document.getElementById('sync-btn')?.addEventListener('click', async ()=>{ if(confirm('Sign out of Task Tracker?')){ await sb.auth.signOut(); location.reload(); } });
   document.querySelectorAll('[data-workspace]').forEach(el=>el.addEventListener('click', ()=>{
@@ -906,10 +1194,10 @@ function renderAddOverlay(){
 }
 
 function attachOverlayEvents(){
-  const backdrop = document.getElementById('backdrop');
-  const close = ()=>{ view = {page:'landing'}; pendingSteps=[]; render(); };
+  attachCommonEvents();
+  // Note: outside-click no longer closes anything — only the buttons below do.
+  const close = ()=>{ pendingSteps=[]; goBack(); };
   document.getElementById('close-overlay')?.addEventListener('click', close);
-  backdrop?.addEventListener('click', (e)=>{ if(e.target===backdrop) close(); });
   document.getElementById('go-home')?.addEventListener('click', close);
   document.querySelectorAll('[data-pick-type]').forEach(el=>el.addEventListener('click', ()=>{ view.itemType = el.dataset.pickType; render(); }));
   document.querySelectorAll('[data-pick-ws]').forEach(el=>el.addEventListener('click', ()=>{ view.itemWorkspace = el.dataset.pickWs; render(); }));
@@ -935,6 +1223,7 @@ function attachOverlayEvents(){
     };
     const freqEl = document.getElementById('f-freq');
     fields.recurrence = newType==='recurring' ? {freq: freqEl ? freqEl.value : 'Weekly'} : null;
+    const cameFrom = view.returnTo; // where we should land after saving — not the add form itself
 
     if(view.editId){
       const existing = getItem(view.editId);
@@ -947,58 +1236,59 @@ function attachOverlayEvents(){
         data.items.splice(idx,1,newItem);
         delete data.expanded[existing.id];
         saveData();
-        view = {page:'detail', id:newId}; render();
+        view = {page:'detail', id:newId, returnTo: cameFrom}; render();
         showToast(`Changed to ${newType} — now ${newId}`);
       } else {
-        updateItem(view.editId, fields); view = {page:'detail', id: view.editId}; render();
+        updateItem(view.editId, fields); view = {page:'detail', id: view.editId, returnTo: cameFrom}; render();
       }
     } else {
-      const it = addItem(newType, fields); pendingSteps.forEach(s=>addStep(it.id, s)); pendingSteps = []; saveData(); view = {page:'detail', id: it.id}; render();
+      const it = addItem(newType, fields); pendingSteps.forEach(s=>addStep(it.id, s)); pendingSteps = []; saveData(); view = {page:'detail', id: it.id, returnTo: cameFrom}; render();
     }
   });
-  document.querySelectorAll('[data-open]').forEach(el=>el.addEventListener('click', ()=>{ view = {page:'detail', id: el.dataset.open}; render(); }));
-  document.querySelectorAll('[data-toggle-today]').forEach(el=>el.addEventListener('click', ()=>{ const [itemId, stepId] = el.dataset.toggleToday.split('|'); toggleToday(itemId, stepId||null); render(); }));
-  document.querySelectorAll('[data-toggle-qw]').forEach(el=>el.addEventListener('click', ()=>{ const [itemId, stepId] = el.dataset.toggleQw.split('|'); toggleQuickWin(itemId, stepId||null); render(); }));
-  document.querySelectorAll('[data-toggle-done]').forEach(el=>el.addEventListener('click', ()=>{ const [itemId, stepId] = el.dataset.toggleDone.split('|'); toggleStepDone(itemId, stepId); render(); }));
-  document.querySelectorAll('[data-delete-step]').forEach(el=>el.addEventListener('click', ()=>{ const [itemId, stepId] = el.dataset.deleteStep.split('|'); if(confirm('Delete this step?')){ deleteStep(itemId, stepId); render(); } }));
-  document.querySelectorAll('[data-move-step]').forEach(el=>el.addEventListener('click', ()=>{ const [itemId, stepId, dir] = el.dataset.moveStep.split('|'); moveStep(itemId, stepId, parseInt(dir,10)); render(); }));
-  document.querySelectorAll('[data-move-item]').forEach(el=>el.addEventListener('click', ()=>{ const [category, id, dir] = el.dataset.moveItem.split('|'); moveItemInCategory(category, id, parseInt(dir,10)); render(); }));
-  initAllStepDrag();
   document.getElementById('add-step-detail-btn')?.addEventListener('click', ()=>{ const inp = document.getElementById('detail-step-input'); if(inp.value.trim()){ addStep(view.id, inp.value); render(); } });
   document.getElementById('detail-step-input')?.addEventListener('keydown', e=>{ if(e.key==='Enter'){ addStep(view.id, e.target.value); render(); } });
-  document.getElementById('mark-complete-btn')?.addEventListener('click', ()=>{ completeItem(view.id); view={page:'landing'}; render(); });
-  document.getElementById('edit-item-btn')?.addEventListener('click', ()=>{ const it = getItem(view.id); view = {page:'add', itemType: it.type, itemWorkspace: it.workspace, editId: view.id}; render(); });
-  document.getElementById('delete-item-btn')?.addEventListener('click', ()=>{ if(confirm('Delete this permanently?')){ deleteItem(view.id); view={page:'landing'}; render(); } });
+  document.getElementById('mark-complete-btn')?.addEventListener('click', ()=>{ completeItem(view.id); goBack(); });
+  document.getElementById('edit-item-btn')?.addEventListener('click', ()=>{ const it = getItem(view.id); goTo({page:'add', itemType: it.type, itemWorkspace: it.workspace, editId: view.id}); });
+  document.getElementById('delete-item-btn')?.addEventListener('click', ()=>{ if(confirm('Delete this permanently?')){ deleteItem(view.id); goBack(); } });
   document.getElementById('park-btn')?.addEventListener('click', ()=>{
     const reason = prompt('Why is this parked / waiting?'); if(reason===null) return;
     const rdate = prompt('Review date (YYYY-MM-DD)?', todayISO()); if(rdate===null) return;
     parkItem(view.id, reason, rdate); render();
   });
   document.getElementById('unpark-btn')?.addEventListener('click', ()=>{ unparkItem(view.id); render(); });
-  document.querySelectorAll('[data-complete-capture]').forEach(el=>el.addEventListener('click', ()=>{ completeQuickCapture(el.dataset.completeCapture); render(); }));
-  document.querySelectorAll('[data-convert-capture]').forEach(el=>el.addEventListener('click', ()=>{
-    const qc = data.quickCaptures.find(q=>q.id===el.dataset.convertCapture); qc.resolved = true; saveData();
-    view = {page:'add', itemType:'task', itemWorkspace: qc.workspace, prefill:{name: qc.text, urgent: qc.urgent}}; render();
-  }));
 }
 
 function renderDetailOverlay(id){
   const it = getItem(id);
   if(!it) return `<div class="overlay-backdrop"><div class="overlay-card">Not found. <button class="btn-secondary" id="go-home">Home</button></div></div>`;
   const prog = progress(it); const colorKey = it.type==='task'?'tasks':it.type==='project'?'projects':'recurring';
-  let stepsHtml = it.steps && it.steps.length ? it.steps.map((s,idx)=>`
+  let stepsHtml = it.steps && it.steps.length ? it.steps.map((s,idx)=>{
+      const editingThis = editingStep && editingStep.itemId===it.id && editingStep.stepId===s.id && !editingStep.subId;
+      if(editingThis){
+        return `<div class="step-row" data-step-id="${s.id}" style="flex-wrap:wrap; gap:8px;">
+        <input type="text" data-step-edit-text="${it.id}|${s.id}" value="${escapeHtml(s.text)}" style="flex:1 1 100%;" />
+        <input type="date" data-step-edit-due="${it.id}|${s.id}" value="${s.dueDate||''}" title="Due date" style="flex:1;" />
+        <input type="date" data-step-edit-review="${it.id}|${s.id}" value="${s.reviewDate||''}" title="Review date" style="flex:1;" />
+        <button class="btn-secondary" data-step-edit-save="${it.id}|${s.id}" style="padding:6px 12px;">Save</button>
+        <button class="btn-secondary" data-step-edit-cancel="${it.id}|${s.id}" style="padding:6px 12px;">Cancel</button>
+      </div>` + subStepsPanel(it.id, s);
+      }
+      return `
       <div class="step-row" data-step-id="${s.id}">
         <span class="drag-handle" title="Drag to reorder">⠿</span>
         <button class="row-check ${s.done?'checked':''}" data-toggle-done="${it.id}|${s.id}"></button>
-        <div class="step-text ${s.done?'done':''}">${escapeHtml(s.text)}</div>
+        <div class="step-text ${s.done?'done':''}" style="cursor:pointer;" data-edit-step-open="${it.id}|${s.id}" title="Click to edit">${escapeHtml(s.text)}</div>
+        ${stepMetaTags(s)}
         <div class="step-flags">
           <button class="flag-btn today ${s.today?'active':''}" data-toggle-today="${it.id}|${s.id}">Today</button>
           <button class="flag-btn quickwin ${s.quickwin?'active':''}" data-toggle-qw="${it.id}|${s.id}">Quick Win</button>
+          ${subStepsToggle(s)}
           <button class="flag-btn" data-move-step="${it.id}|${s.id}|-1" ${idx===0?'disabled style="opacity:.3;"':''}>↑</button>
           <button class="flag-btn" data-move-step="${it.id}|${s.id}|1" ${idx===it.steps.length-1?'disabled style="opacity:.3;"':''}>↓</button>
           <button class="flag-btn btn-danger" data-delete-step="${it.id}|${s.id}">✕</button>
         </div>
-      </div>`).join('') : `<div class="empty">No steps — this item can be selected directly for Today or Quick Wins below.</div>`;
+      </div>` + subStepsPanel(it.id, s);
+    }).join('') : `<div class="empty">No steps — this item can be selected directly for Today or Quick Wins below.</div>`;
   const itemLevelFlags = `<div class="detail-actions">
       <button class="detail-btn primary ${it.today?'active':''}" data-toggle-today="${it.id}|">${it.today?'✓ In Today':'Add to Today'}</button>
       <button class="detail-btn ${it.quickwin?'active':''}" data-toggle-qw="${it.id}|">${it.quickwin?'✓ Quick Win':'Mark Quick Win'}</button>
@@ -1059,14 +1349,14 @@ function renderListOverlay(category){
   }
   else if(category==='captures'){
     title='Quick Capture';
-    const rows = data.quickCaptures.filter(q=>!q.resolved && q.workspace===data.currentWorkspace).map(qc=>`
-      <div class="qc-item ${qc.urgent?'urgent':''}"><div class="qc-text">${escapeHtml(qc.text)}</div>
-        <div class="qc-actions"><button class="qc-btn convert" data-convert-capture="${qc.id}">Convert</button><button class="qc-btn" data-complete-capture="${qc.id}">Done</button></div>
-      </div>`).join('') || `<div class="empty">Inbox empty.</div>`;
+    const list = data.quickCaptures.filter(q=>!q.resolved && q.workspace===data.currentWorkspace);
+    const full = orderedCaptures(list);
+    const rows = full.length ? `<div data-capture-drag-container>${full.map((qc,idx)=>quickCaptureRow(qc, idx, full.length)).join('')}</div>` : `<div class="empty">Inbox empty.</div>`;
     return listShell(title, rows);
   }
   const full = reorderable ? orderedList(category, list) : sortPreview(list||[]);
-  const rows = full.length ? full.map((it,idx)=>itemRow(it,colorKey, reorderable ? {reorder:true, category, idx, total:full.length} : {})).join('') : `<div class="empty">Nothing here.</div>`;
+  const rowsInner = full.length ? full.map((it,idx)=>itemRow(it,colorKey, reorderable ? {reorder:true, category, idx, total:full.length} : {})).join('') : `<div class="empty">Nothing here.</div>`;
+  const rows = (reorderable && full.length) ? `<div data-item-drag-container="${category}">${rowsInner}</div>` : rowsInner;
   return listShell(title, rows);
 }
 function listShell(title, rowsHtml){
