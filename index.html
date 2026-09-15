@@ -132,9 +132,17 @@
   .qc-btn{font-size:10.5px; font-weight:700; padding:5px 8px; border-radius:6px; background:var(--surface3); color:var(--text-dim);}
   .qc-btn.convert{background:var(--capture-bg); color:var(--capture);}
 
-  .win-row{display:flex; gap:9px; padding:7px 6px; font-size:12.5px;}
+  .win-row{display:flex; gap:9px; padding:7px 6px; font-size:12.5px; border-radius:8px;}
   .win-row .dot{color:var(--wins); flex-shrink:0;}
   .win-parent{color:var(--text-faint); font-size:10.5px;}
+  .win-row.clickable{cursor:pointer;}
+  .win-row.clickable:hover{background:var(--surface2);}
+
+  .item-flags{display:flex; gap:4px; flex-shrink:0; align-items:flex-start; margin-top:2px;}
+  .drag-handle{cursor:grab; touch-action:none; color:var(--text-faint); font-size:13px; padding:2px 6px; flex-shrink:0; user-select:none; line-height:1.4;}
+  .drag-handle:hover{color:var(--text-dim);}
+  .drag-handle:active{cursor:grabbing;}
+  .step-row.dragging,.step-nested-row.dragging{opacity:.45;}
 
   .overlay-backdrop{position:fixed; inset:0; background:rgba(6,7,11,0.72); backdrop-filter:blur(2px); display:flex; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; z-index:50;}
   .overlay-card{background:var(--surface); border:1px solid var(--border); border-radius:18px; max-width:640px; width:100%; padding:24px 24px 28px; margin-top:10px;}
@@ -231,8 +239,8 @@ function fromItemRow(r){
 }
 function toQcRow(q){ return { id:q.id, user_id:currentUser.id, text:q.text, urgent:!!q.urgent, created_date:q.createdDate||todayISO(), resolved:!!q.resolved, workspace:q.workspace }; }
 function fromQcRow(r){ return { id:r.id, text:r.text, urgent:r.urgent, createdDate:r.created_date, resolved:r.resolved, workspace:r.workspace }; }
-function toHistRow(h){ return { id:h.id, user_id:currentUser.id, date:h.date, type:h.type, text:h.text, parent_name:h.parentName||null, workspace:h.workspace }; }
-function fromHistRow(r){ return { id:r.id, date:r.date, type:r.type, text:r.text, parentName:r.parent_name, workspace:r.workspace }; }
+function toHistRow(h){ return { id:h.id, user_id:currentUser.id, date:h.date, type:h.type, text:h.text, parent_name:h.parentName||null, workspace:h.workspace, item_id:h.itemId||null }; }
+function fromHistRow(r){ return { id:r.id, date:r.date, type:r.type, text:r.text, parentName:r.parent_name, workspace:r.workspace, itemId:r.item_id||null }; }
 
 async function fetchAllData(){
   const [itemsRes, qcRes, histRes, stateRes] = await Promise.all([
@@ -320,6 +328,7 @@ async function boot(){
   if(!sessionData.session){ renderLogin(); return; }
   currentUser = sessionData.session.user;
   await fetchAllData();
+  if(repairDuplicateStepIds()) await saveData();
   loaded = true;
   if(data.items.length===0 && data.quickCaptures.length===0 && data.history.length===0){
     renderImportScreen();
@@ -345,10 +354,10 @@ function progress(item){
   return {done, total, pct: Math.round(done/total*100)};
 }
 function todayCount(){
-  let c=0; data.items.forEach(it=>{ if(it.workspace!==data.currentWorkspace) return; if(!it.steps || it.steps.length===0){ if(it.today) c++; } else it.steps.forEach(s=>{ if(s.today && !s.done) c++; }); }); return c;
+  let c=0; data.items.forEach(it=>{ if(it.workspace!==data.currentWorkspace) return; if(it.today) c++; if(it.steps) it.steps.forEach(s=>{ if(s.today && !s.done) c++; }); }); return c;
 }
 function quickWinCount(){
-  let c=0; data.items.forEach(it=>{ if(it.workspace!==data.currentWorkspace) return; if(!it.steps || it.steps.length===0){ if(it.quickwin) c++; } else it.steps.forEach(s=>{ if(s.quickwin && !s.done) c++; }); }); return c;
+  let c=0; data.items.forEach(it=>{ if(it.workspace!==data.currentWorkspace) return; if(it.quickwin) c++; if(it.steps) it.steps.forEach(s=>{ if(s.quickwin && !s.done) c++; }); }); return c;
 }
 function weekRange(){
   const now = new Date(); const day = (now.getDay()+6)%7;
@@ -372,11 +381,27 @@ function addItem(type, fields){
 }
 function updateItem(id, fields){ const it = getItem(id); if(!it) return; Object.assign(it, fields); saveData(); }
 function deleteItem(id){ data.items = data.items.filter(i=>i.id!==id); sb.from('items').delete().eq('id', id).then(()=>{}); saveData(); }
+function newStepId(itemId){ return itemId+'-S'+(crypto.randomUUID?crypto.randomUUID().slice(0,8):Math.random().toString(36).slice(2,10)); }
 function addStep(itemId, text){
   const it = getItem(itemId); if(!it || !text.trim()) return;
-  const stepNum = String(it.steps.length+1).padStart(2,'0');
-  it.steps.push({ id: itemId+'-S'+stepNum, text: text.trim(), done:false, today:false, quickwin:false });
+  it.steps.push({ id: newStepId(itemId), text: text.trim(), done:false, today:false, quickwin:false });
   saveData();
+}
+/* one-time repair: earlier builds generated step ids from the step count at the time
+   (e.g. "-S03"), so deleting a step and later adding a new one could hand out a
+   duplicate id. That made the wrong step move when reordering. This fixes any
+   duplicates found in existing data, once, on load. */
+function repairDuplicateStepIds(){
+  let changed = false;
+  data.items.forEach(it=>{
+    if(!it.steps || !it.steps.length) return;
+    const seen = new Set();
+    it.steps.forEach(s=>{
+      if(!s.id || seen.has(s.id)){ s.id = newStepId(it.id); changed = true; }
+      seen.add(s.id);
+    });
+  });
+  return changed;
 }
 function deleteStep(itemId, stepId){
   const it = getItem(itemId); if(!it) return;
@@ -386,7 +411,7 @@ function deleteStep(itemId, stepId){
 function toggleStepDone(itemId, stepId){
   const it = getItem(itemId); const step = it.steps.find(s=>s.id===stepId);
   step.done = !step.done;
-  if(step.done){ step.today=false; step.quickwin=false; addToHistory({type:'step', text: step.text, parentName: it.name, workspace: it.workspace}); }
+  if(step.done){ step.today=false; step.quickwin=false; addToHistory({type:'step', text: step.text, parentName: it.name, workspace: it.workspace, itemId: it.id}); }
   saveData(); checkAllStepsComplete(it);
 }
 function checkAllStepsComplete(it){
@@ -409,7 +434,7 @@ function toggleQuickWin(itemId, stepId){
 function completeItem(id){
   const it = getItem(id); if(!it) return;
   it.completed = true; it.completedDate = todayISO(); it.today=false; it.quickwin=false;
-  addToHistory({type: it.type, text: it.name, parentName: null, workspace: it.workspace});
+  addToHistory({type: it.type, text: it.name, parentName: null, workspace: it.workspace, itemId: it.id});
   if(it.type==='recurring') rollRecurring(it);
   saveData();
 }
@@ -438,6 +463,53 @@ function moveStep(itemId, stepId, dir){
   saveData();
 }
 function toggleExpand(id){ data.expanded[id] = !data.expanded[id]; saveData(); render(); }
+
+/* ---------- drag-to-reorder for steps (mouse + touch, via Pointer Events) ---------- */
+function initStepDrag(container, itemId){
+  if(!container) return;
+  container.querySelectorAll('.drag-handle').forEach(handle=>{
+    handle.addEventListener('pointerdown', (e)=>{
+      e.preventDefault();
+      const rowSelector = '.step-row, .step-nested-row';
+      const dragEl = handle.closest(rowSelector);
+      if(!dragEl) return;
+      dragEl.classList.add('dragging');
+      const onMove = (ev)=>{
+        const y = ev.clientY;
+        const siblings = Array.from(container.querySelectorAll(rowSelector)).filter(r=>r!==dragEl);
+        let target = null;
+        for(const sib of siblings){
+          const rect = sib.getBoundingClientRect();
+          if(y < rect.top + rect.height/2){ target = sib; break; }
+        }
+        if(target){ container.insertBefore(dragEl, target); }
+        else {
+          const addRow = container.querySelector('.step-add-inline, .step-add-row');
+          if(addRow) container.insertBefore(dragEl, addRow); else container.appendChild(dragEl);
+        }
+      };
+      const finish = ()=>{
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', finish);
+        document.removeEventListener('pointercancel', finish);
+        dragEl.classList.remove('dragging');
+        const it = getItem(itemId);
+        if(it && it.steps){
+          const newOrder = Array.from(container.querySelectorAll('[data-step-id]')).map(r=>r.dataset.stepId);
+          it.steps.sort((a,b)=> newOrder.indexOf(a.id) - newOrder.indexOf(b.id));
+          saveData();
+        }
+        render();
+      };
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', finish);
+      document.addEventListener('pointercancel', finish);
+    });
+  });
+}
+function initAllStepDrag(){
+  document.querySelectorAll('[data-drag-container]').forEach(el=> initStepDrag(el, el.dataset.dragContainer));
+}
 
 /* ---------- manual item ordering (Tasks/Projects/Recurring/Parked) ---------- */
 function getCategoryItems(category){
@@ -504,10 +576,9 @@ function renderLanding(){
   const todayItems = [], quickWinItems = [];
   data.items.forEach(it=>{
     if(it.completed || !ws(it)) return;
-    if(!it.steps || it.steps.length===0){
-      if(it.today) todayItems.push({item:it, step:null});
-      if(it.quickwin) quickWinItems.push({item:it, step:null});
-    } else {
+    if(it.today) todayItems.push({item:it, step:null});
+    if(it.quickwin) quickWinItems.push({item:it, step:null});
+    if(it.steps && it.steps.length){
       it.steps.forEach(s=>{ if(s.done) return; if(s.today) todayItems.push({item:it, step:s}); if(s.quickwin) quickWinItems.push({item:it, step:s}); });
     }
   });
@@ -564,9 +635,10 @@ function renderLanding(){
 
 function nestedSteps(item){
   if(!item.steps || item.steps.length===0) return '';
-  return `<div class="steps-nested">
+  return `<div class="steps-nested" data-drag-container="${item.id}">
     ${item.steps.map((s,idx)=>`
-      <div class="step-nested-row">
+      <div class="step-nested-row" data-step-id="${s.id}">
+        <span class="drag-handle" title="Drag to reorder">⠿</span>
         <button class="row-check ${s.done?'checked':''}" style="width:16px;height:16px;" data-toggle-done="${item.id}|${s.id}"></button>
         <div class="step-nested-text ${s.done?'done':''}">${escapeHtml(s.text)}</div>
         <button class="mini-flag today ${s.today?'active':''}" data-toggle-today="${item.id}|${s.id}">Today</button>
@@ -601,6 +673,10 @@ function itemRow(item, colorKey, opts){
       <button class="mini-flag" data-move-item="${opts.category}|${item.id}|-1" ${opts.idx===0?'disabled style="opacity:.3;"':''}>↑</button>
       <button class="mini-flag" data-move-item="${opts.category}|${item.id}|1" ${opts.idx===opts.total-1?'disabled style="opacity:.3;"':''}>↓</button>
     </div>` : '';
+  const flagHtml = `<div class="item-flags">
+      <button class="mini-flag today ${item.today?'active':''}" data-toggle-today="${item.id}|" title="${item.today?'In Today':'Add to Today'}">${item.today?'★':'☆'}</button>
+      <button class="mini-flag quickwin ${item.quickwin?'active':''}" data-toggle-qw="${item.id}|" title="${item.quickwin?'Quick Win':'Mark Quick Win'}">⚡</button>
+    </div>`;
   return `<div class="row">
     <div class="row-main">
       ${hasSteps ? `<button class="expand-btn" data-toggle-expand="${item.id}">${expanded?'−':'+'}</button>` : `<span class="expand-spacer"></span>`}
@@ -609,6 +685,7 @@ function itemRow(item, colorKey, opts){
         <div class="row-meta">${tags}</div>
         ${progHtml}
       </div>
+      ${flagHtml}
       ${reorderHtml}
     </div>
     ${hasSteps && expanded ? nestedSteps(item) : ''}
@@ -694,10 +771,12 @@ function sectionItemList(title, colorKey, list, category){
   return section(title,colorKey, '', `${list.length}`, body+foot);
 }
 function sectionWins(title, list, colorKey){
-  const body = list.length ? list.slice(0,8).map(h=>`
-    <div class="win-row"><span class="dot">✦</span>
+  const body = list.length ? list.slice(0,8).map(h=>{
+    const canOpen = h.itemId && getItem(h.itemId);
+    return `<div class="win-row ${canOpen?'clickable':''}" ${canOpen?`data-open="${h.itemId}"`:''}><span class="dot">✦</span>
       <div><div>${escapeHtml(h.text)}</div>${h.parentName?`<div class="win-parent">${escapeHtml(h.parentName)}</div>`:''}</div>
-    </div>`).join('') : `<div class="empty">Nothing completed yet.</div>`;
+    </div>`;
+  }).join('') : `<div class="empty">Nothing completed yet.</div>`;
   return section(title,colorKey, '', `${list.length}`, body);
 }
 function section(title, colorKey, hintHtml, countText, bodyHtml){
@@ -738,6 +817,7 @@ function attachLandingEvents(){
   document.querySelectorAll('[data-move-item]').forEach(el=>el.addEventListener('click', (e)=>{
     e.stopPropagation(); const [category, id, dir] = el.dataset.moveItem.split('|'); moveItemInCategory(category, id, parseInt(dir,10)); render();
   }));
+  initAllStepDrag();
   document.querySelectorAll('[data-inline-step-add]').forEach(el=>el.addEventListener('click', (e)=>{
     e.stopPropagation(); const id = el.dataset.inlineStepAdd; const inp = document.querySelector(`[data-inline-step-input="${id}"]`);
     if(inp.value.trim()){ addStep(id, inp.value); render(); }
@@ -883,6 +963,7 @@ function attachOverlayEvents(){
   document.querySelectorAll('[data-delete-step]').forEach(el=>el.addEventListener('click', ()=>{ const [itemId, stepId] = el.dataset.deleteStep.split('|'); if(confirm('Delete this step?')){ deleteStep(itemId, stepId); render(); } }));
   document.querySelectorAll('[data-move-step]').forEach(el=>el.addEventListener('click', ()=>{ const [itemId, stepId, dir] = el.dataset.moveStep.split('|'); moveStep(itemId, stepId, parseInt(dir,10)); render(); }));
   document.querySelectorAll('[data-move-item]').forEach(el=>el.addEventListener('click', ()=>{ const [category, id, dir] = el.dataset.moveItem.split('|'); moveItemInCategory(category, id, parseInt(dir,10)); render(); }));
+  initAllStepDrag();
   document.getElementById('add-step-detail-btn')?.addEventListener('click', ()=>{ const inp = document.getElementById('detail-step-input'); if(inp.value.trim()){ addStep(view.id, inp.value); render(); } });
   document.getElementById('detail-step-input')?.addEventListener('keydown', e=>{ if(e.key==='Enter'){ addStep(view.id, e.target.value); render(); } });
   document.getElementById('mark-complete-btn')?.addEventListener('click', ()=>{ completeItem(view.id); view={page:'landing'}; render(); });
@@ -906,7 +987,8 @@ function renderDetailOverlay(id){
   if(!it) return `<div class="overlay-backdrop"><div class="overlay-card">Not found. <button class="btn-secondary" id="go-home">Home</button></div></div>`;
   const prog = progress(it); const colorKey = it.type==='task'?'tasks':it.type==='project'?'projects':'recurring';
   let stepsHtml = it.steps && it.steps.length ? it.steps.map((s,idx)=>`
-      <div class="step-row">
+      <div class="step-row" data-step-id="${s.id}">
+        <span class="drag-handle" title="Drag to reorder">⠿</span>
         <button class="row-check ${s.done?'checked':''}" data-toggle-done="${it.id}|${s.id}"></button>
         <div class="step-text ${s.done?'done':''}">${escapeHtml(s.text)}</div>
         <div class="step-flags">
@@ -917,10 +999,10 @@ function renderDetailOverlay(id){
           <button class="flag-btn btn-danger" data-delete-step="${it.id}|${s.id}">✕</button>
         </div>
       </div>`).join('') : `<div class="empty">No steps — this item can be selected directly for Today or Quick Wins below.</div>`;
-  const itemLevelFlags = (!it.steps || it.steps.length===0) ? `<div class="detail-actions">
+  const itemLevelFlags = `<div class="detail-actions">
       <button class="detail-btn primary ${it.today?'active':''}" data-toggle-today="${it.id}|">${it.today?'✓ In Today':'Add to Today'}</button>
       <button class="detail-btn ${it.quickwin?'active':''}" data-toggle-qw="${it.id}|">${it.quickwin?'✓ Quick Win':'Mark Quick Win'}</button>
-    </div>` : '';
+    </div>`;
   const parkedBox = it.parked ? `<div class="park-box"><b>Parked / Waiting</b> — ${escapeHtml(it.parkReason||'')}<br/>Review ${fmtDate(it.parkReviewDate)||'—'} ${it.dueDate?` · Due ${fmtDate(it.dueDate)}`:''}</div>` : '';
   return `<div class="overlay-backdrop" id="backdrop"><div class="overlay-card">
     <div class="overlay-top">
@@ -942,7 +1024,7 @@ function renderDetailOverlay(id){
     ${it.notes ? `<div style="font-size:13px; color:var(--text-dim); margin-bottom:6px;">${escapeHtml(it.notes)}</div>` : ''}
     ${parkedBox}
     <label class="field-label" style="margin-top:16px;">Steps</label>
-    <div class="step-list">${stepsHtml}</div>
+    <div class="step-list" data-drag-container="${it.id}">${stepsHtml}</div>
     <div class="step-add-row"><input type="text" id="detail-step-input" placeholder="Add a step…" /><button class="btn-secondary" id="add-step-detail-btn" style="padding:10px 16px;">Add</button></div>
     ${itemLevelFlags}
     <div class="detail-actions">
@@ -964,12 +1046,15 @@ function renderListOverlay(category){
   else if(category==='history'){
     title='Completed History';
     const entries = data.history.filter(h=>h.workspace===data.currentWorkspace).slice().sort((a,b)=> a.date<b.date?1:a.date>b.date?-1:0);
-    const rows = entries.length ? entries.map(h=>`
-      <div class="win-row"><span class="dot">✦</span>
+    const rows = entries.length ? entries.map(h=>{
+      const canOpen = h.itemId && getItem(h.itemId);
+      return `<div class="win-row ${canOpen?'clickable':''}" ${canOpen?`data-open="${h.itemId}"`:''}><span class="dot">✦</span>
         <div><div>${escapeHtml(h.text)}</div>
         ${h.parentName?`<div class="win-parent">${escapeHtml(h.parentName)}</div>`:''}
+        ${canOpen?`<div class="win-parent" style="color:var(--today);">View task ›</div>`:''}
         <div class="win-parent">Completed ${fmtDate(h.date)}</div></div>
-      </div>`).join('') : `<div class="empty">Nothing completed yet.</div>`;
+      </div>`;
+    }).join('') : `<div class="empty">Nothing completed yet.</div>`;
     return listShell(title, rows);
   }
   else if(category==='captures'){
